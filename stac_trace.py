@@ -8,7 +8,7 @@ from typing import Optional, List, Dict, Any, Tuple
 import click
 import requests
 from dotenv import load_dotenv
-from pystac_client import Client
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from rich.console import Console
 from rich.table import Table
 from rich.json import JSON
@@ -536,15 +536,17 @@ class UP42Client:
 
         return data
     
-    def search_catalog_deep(self, 
-                           host: str = "oneatlas",
-                           bbox: Optional[List[float]] = None,
-                           start_date: Optional[str] = None,
-                           end_date: Optional[str] = None,
-                           collections: Optional[List[str]] = None,
-                           cloud_coverage: Optional[int] = None,
-                           show_progress: bool = True,
-                           taskable_only: bool = False) -> List[Dict]:
+    def search_catalog_deep(self,
+                            host: str = "oneatlas",
+                            bbox: Optional[List[float]] = None,
+                            start_date: Optional[str] = None,
+                            end_date: Optional[str] = None,
+                            collections: Optional[List[str]] = None,
+                            cloud_coverage: Optional[int] = None,
+                            show_progress: bool = True,
+                            taskable_only: bool = False,
+                            min_chunk_hours: int = 1,
+                            max_workers: int = 4) -> List[Dict]:
         """Deep search that automatically handles API limits by time-slicing.
         
         Bypasses the 500-item API limit by breaking searches into time chunks
@@ -572,32 +574,53 @@ class UP42Client:
         else:
             end_dt = datetime.now(timezone.utc)
         
-        # Calculate time span
-        time_span = (end_dt - start_dt).days
-        
-        # If less than 2 days, do single search
-        if time_span <= 2:
+        # Calculate time span in hours for more precise control
+        time_span_hours = (end_dt - start_dt).total_seconds() / 3600
+
+        # If less than 24 hours, do single search
+        if time_span_hours <= 24:
             result = self.search_catalog(
                 host=host, bbox=bbox, start_date=start_date, end_date=end_date,
                 collections=collections, limit=500, cloud_coverage=cloud_coverage
             )
             return result.get("features", [])
-        
-        # Otherwise, split into chunks (5-day chunks work well, ensures we get all items even with 500-item limit)
-        chunk_days = 5
+
+        # Start with reasonable chunk size based on total time span
+        if time_span_hours <= 168:  # 1 week
+            chunk_hours = 24  # 1 day
+        elif time_span_hours <= 720:  # 1 month
+            chunk_hours = 72  # 3 days
+        else:  # Longer periods
+            chunk_hours = 168  # 1 week
+
         current_date = start_dt
         chunks_processed = 0
-        total_chunks = (time_span + chunk_days - 1) // chunk_days  # Ceiling division
-        
+
+        # For very long periods, use parallel processing
+        if time_span_hours > 168 * 4:  # More than 4 weeks
+            return self._search_catalog_parallel(
+                host=host, bbox=bbox, start_date=start_dt, end_date=end_dt,
+                collections=collections, cloud_coverage=cloud_coverage,
+                show_progress=show_progress, min_chunk_hours=min_chunk_hours,
+                max_workers=max_workers
+            )
+
         while current_date < end_dt:
-            chunk_end = min(current_date + timedelta(days=chunk_days), end_dt)
+            chunk_end = min(current_date + timedelta(hours=chunk_hours), end_dt)
             # Ensure we don't create a 0-duration chunk
             if chunk_end == current_date:
                 break
-            
+
             if show_progress:
                 chunks_processed += 1
-                console.print(f"  Searching {current_date.date()} to {chunk_end.date()}... ", end="")
+                # Show appropriate time format based on chunk size
+                if chunk_hours >= 24:
+                    start_str = current_date.date()
+                    end_str = chunk_end.date()
+                else:
+                    start_str = current_date.strftime("%Y-%m-%d %H:%M")
+                    end_str = chunk_end.strftime("%Y-%m-%d %H:%M")
+                console.print(f"  Searching {start_str} to {end_str}... ", end="")
             
             result = self.search_catalog(
                 host=host,
@@ -648,14 +671,21 @@ class UP42Client:
                 console.print(f"[green]{len(items)} items[/green] (total: {len(all_items)})")
             
             # If we hit the limit, use smaller chunks next time
-            if len(items) == 500 and chunk_days > 1:
-                chunk_days = max(1, chunk_days // 2)
+            if len(items) == 500 and chunk_hours > min_chunk_hours:
+                old_chunk_hours = chunk_hours
+                chunk_hours = max(min_chunk_hours, chunk_hours // 2)
                 if show_progress:
-                    console.print(f"  [yellow]Hit limit, reducing chunk size to {chunk_days} days[/yellow]")
-            # If we still hit the limit with 1-day chunks, warn the user
-            elif len(items) == 500 and chunk_days == 1:
+                    if chunk_hours >= 24:
+                        chunk_desc = f"{chunk_hours // 24} days"
+                    elif chunk_hours >= 1:
+                        chunk_desc = f"{chunk_hours} hours"
+                    else:
+                        chunk_desc = f"{chunk_hours * 60} minutes"
+                    console.print(f"  [yellow]Hit limit, reducing chunk size to {chunk_desc}[/yellow]")
+            # If we still hit the limit with minimum chunk size, warn the user
+            elif len(items) == 500 and chunk_hours == min_chunk_hours:
                 if show_progress:
-                    console.print(f"  [yellow]Warning: Still hitting 500-item limit with 1-day chunks. May be missing items.[/yellow]")
+                    console.print(f"  [yellow]Warning: Still hitting 500-item limit with minimum chunk size. May be missing items.[/yellow]")
             
             current_date = chunk_end
 
@@ -663,7 +693,64 @@ class UP42Client:
             console.print(f"  [green]Completed {chunks_processed} chunks, total items: {len(all_items)}[/green]")
 
         return all_items
-    
+
+    def _search_catalog_parallel(self,
+                                host: str,
+                                bbox: Optional[List[float]],
+                                start_date: datetime,
+                                end_date: datetime,
+                                collections: Optional[List[str]],
+                                cloud_coverage: Optional[int],
+                                show_progress: bool,
+                                min_chunk_hours: int,
+                                max_workers: int) -> List[Dict]:
+        """Parallel version of deep search for very long time periods."""
+
+        # Create chunks for parallel processing
+        chunks = []
+        current_date = start_date
+
+        while current_date < end_date:
+            chunk_end = min(current_date + timedelta(hours=24), end_date)  # 1-day chunks for parallel
+            if chunk_end > current_date:
+                chunks.append((current_date, chunk_end))
+            current_date = chunk_end
+
+        if show_progress:
+            console.print(f"  [cyan]Processing {len(chunks)} chunks in parallel with {max_workers} workers...[/cyan]")
+
+        all_items = []
+
+        def process_chunk(chunk_start, chunk_end):
+            """Process a single time chunk."""
+            result = self.search_catalog(
+                host=host, bbox=bbox,
+                start_date=chunk_start.isoformat() + "Z",
+                end_date=chunk_end.isoformat() + "Z",
+                collections=collections, limit=500, cloud_coverage=cloud_coverage
+            )
+            return result.get("features", [])
+
+        # Process chunks in parallel
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_chunk = {
+                executor.submit(process_chunk, chunk_start, chunk_end): (chunk_start, chunk_end)
+                for chunk_start, chunk_end in chunks
+            }
+
+            for future in as_completed(future_to_chunk):
+                chunk_start, chunk_end = future_to_chunk[future]
+                try:
+                    items = future.result()
+                    all_items.extend(items)
+                    if show_progress:
+                        console.print(f"  [green]✓[/green] {chunk_start.date()} to {chunk_end.date()}: {len(items)} items (total: {len(all_items)})")
+                except Exception as e:
+                    if show_progress:
+                        console.print(f"  [red]✗[/red] {chunk_start.date()} to {chunk_end.date()}: {str(e)}")
+
+        return all_items
+
     def get_collections(self, max_resolution: Optional[float] = None) -> List[Dict[str, Any]]:
         """Get available collections from UP42 catalog, optionally filtered by resolution."""
         collections_endpoint = f"{self.base_url}/collections"
@@ -1021,7 +1108,8 @@ def search(host, bbox, days, collection, cloud, limit, format):
 @click.option('--days', default=7, help='Number of days to analyze')
 @click.option('--bbox', help='Bounding box (min_lon,min_lat,max_lon,max_lat)')
 @click.option('--infra', is_flag=True, default=False, help='Query infrastructure data for each hotspot')
-def hotspots(host, days, bbox, infra):
+@click.option('--min-chunk-hours', default=1, type=int, help='Minimum chunk size in hours for API calls (default: 1)')
+def hotspots(host, days, bbox, infra, min_chunk_hours):
     """Find locations with recent imaging activity."""
     
     client = UP42Client()
@@ -1053,7 +1141,8 @@ def hotspots(host, days, bbox, infra):
         bbox=bbox_list,
         start_date=start_date.isoformat().replace("+00:00", "Z"),
         end_date=end_date.isoformat().replace("+00:00", "Z"),
-        collections=taskable_collections
+        collections=taskable_collections,
+        min_chunk_hours=min_chunk_hours
     )
     
     if not items:
