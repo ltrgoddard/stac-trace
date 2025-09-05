@@ -23,7 +23,11 @@ geocode_cache = {}
 
 
 def get_location_name(lat: float, lon: float) -> str:
-    """Get a human-readable location name from coordinates using Nominatim."""
+    """Get human-readable location name using reverse geocoding.
+    
+    Uses OpenStreetMap Nominatim (no API key required). Implements
+    caching and exponential backoff to handle rate limits gracefully.
+    """
     # Round to 1 decimal for cache key (about 11km resolution)
     cache_key = f"{lat:.1f},{lon:.1f}"
     
@@ -87,6 +91,11 @@ def get_location_name(lat: float, lon: float) -> str:
 
 
 class UP42Client:
+    """Client for interacting with UP42 STAC API.
+    
+    Handles OAuth authentication and provides methods for searching
+    satellite imagery catalogs with automatic pagination.
+    """
     def __init__(self):
         self.username = os.getenv("UP42_USERNAME")
         self.password = os.getenv("UP42_PASSWORD")
@@ -185,7 +194,12 @@ class UP42Client:
                            cloud_coverage: Optional[int] = None,
                            show_progress: bool = True,
                            taskable_only: bool = False) -> List[Dict]:
-        """Deep search that automatically handles API limits by time-slicing."""
+        """Deep search that automatically handles API limits by time-slicing.
+        
+        Bypasses the 500-item API limit by breaking searches into time chunks
+        and combining results. Essential for finding all surveillance activity
+        in a given area/timeframe.
+        """
         
         all_items = []
         
@@ -287,7 +301,12 @@ class UP42Client:
         return collections
     
     def get_taskable_collections(self) -> List[str]:
-        """Get list of collection names for high-resolution taskable imagery."""
+        """Get list of collection names for high-resolution taskable imagery.
+        
+        Returns only satellites with ≤0.75m resolution, which are typically
+        taskable and represent intentional surveillance rather than routine
+        Earth observation (excludes SPOT, Sentinel, Landsat, etc.).
+        """
         # Filter to collections with ≤0.75m resolution (taskable satellites)
         high_res_collections = self.get_collections(max_resolution=0.75)
         return [c["name"] for c in high_res_collections]
@@ -377,7 +396,12 @@ def display_items(items: List[Dict], format: str = "table"):
 
 
 def analyze_recent_activity(items: List[Dict], taskable_only: bool = False) -> Dict[str, Any]:
-    """Analyze patterns in recent imaging activity."""
+    """Analyze patterns in recent imaging activity.
+    
+    Clusters satellite imagery by location using grid-based clustering
+    with adjacent cell merging to avoid boundary splitting. Returns
+    hotspots sorted by surveillance intensity.
+    """
     
     # Get taskable collection names if filtering
     taskable_collections = set()

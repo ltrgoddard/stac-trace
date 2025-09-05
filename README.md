@@ -9,6 +9,7 @@ A command-line tool for exploring STAC (SpatioTemporal Asset Catalog) catalogues
 ## Features
 
 - 🛰️ **Multi-provider search** - Query satellite imagery from OnAtlas, Maxar, Capella, and more
+- 🎯 **Taskable satellites only** - Filters to high-resolution (≤0.75m) satellites that can be specifically tasked
 - 📍 **Location intelligence** - Automatic reverse geocoding shows human-readable place names
 - 🔥 **Hotspot detection** - Find the most surveilled locations worldwide
 - 📈 **Temporal analysis** - Track surveillance patterns over time
@@ -104,7 +105,9 @@ Track what's been watching a particular place:
 ## Command Reference
 
 ### `collections`
-List all available satellite collections with metadata.
+List available satellite collections with metadata.
+- Default: Shows only high-resolution taskable satellites (≤0.75m)
+- `--all`: Show all available collections including wide-area satellites
 
 ### `search`
 Search for satellite imagery with filters:
@@ -133,9 +136,10 @@ Check surveillance history of a specific location:
 ## How It Works
 
 1. **STAC Integration** - Uses the STAC (SpatioTemporal Asset Catalog) API standard to query multiple providers
-2. **Smart Pagination** - Automatically time-slices searches to bypass API limits (500 items/request)
-3. **Location Intelligence** - Uses OpenStreetMap's Nominatim for reverse geocoding
-4. **Pattern Detection** - Aggregates imagery by location grid to identify surveillance patterns
+2. **Smart Filtering** - Focuses on high-resolution taskable satellites (≤0.75m) to identify intentional surveillance
+3. **Smart Pagination** - Automatically time-slices searches to bypass API limits (500 items/request)
+4. **Location Intelligence** - Uses OpenStreetMap's Nominatim for reverse geocoding
+5. **Pattern Detection** - Aggregates imagery by location grid to identify surveillance patterns
 
 ## Examples
 
