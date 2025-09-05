@@ -401,29 +401,11 @@ def analyze_recent_activity(items: List[Dict]) -> Dict[str, Any]:
             else:
                 continue
         
-        # Add to primary grid cell
+        # Add to grid cell (simple integer rounding)
         lat_key = int(lat)
         lon_key = int(lon)
         loc_key = f"{lat_key},{lon_key}"
         locations[loc_key] = locations.get(loc_key, 0) + 1
-        
-        # Also add to adjacent cells if close to boundary (within 0.2 degrees)
-        lat_frac = lat - lat_key
-        lon_frac = lon - lon_key
-        
-        if lat_frac > 0.8:  # Close to next latitude line
-            adj_key = f"{lat_key + 1},{lon_key}"
-            locations[adj_key] = locations.get(adj_key, 0) + 0.5  # Half weight
-        elif lat_frac < 0.2:  # Close to previous latitude line
-            adj_key = f"{lat_key - 1},{lon_key}"
-            locations[adj_key] = locations.get(adj_key, 0) + 0.5
-            
-        if lon_frac > 0.8:  # Close to next longitude line
-            adj_key = f"{lat_key},{lon_key + 1}"
-            locations[adj_key] = locations.get(adj_key, 0) + 0.5
-        elif lon_frac < 0.2:  # Close to previous longitude line
-            adj_key = f"{lat_key},{lon_key - 1}"
-            locations[adj_key] = locations.get(adj_key, 0) + 0.5
     
     # Merge adjacent hotspots before sorting
     merged_locations = {}
@@ -622,9 +604,7 @@ def hotspots(host, days, bbox):
         for i, (location, count) in enumerate(analysis['hotspots']):
             lat, lon = map(float, location.split(','))
             location_name = get_location_name(lat, lon)
-            # Round count for display if it has fractional part from overlapping
-            display_count = int(count) if count == int(count) else f"{count:.1f}"
-            console.print(f"  • {location_name} ({lat}, {lon}): {display_count} items")
+            console.print(f"  • {location_name} ({lat}, {lon}): {int(count)} items")
             
             # Limit geocoding calls for free service
             if i >= 4:  # Only do top 5
