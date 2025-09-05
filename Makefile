@@ -11,7 +11,7 @@ TOP_N ?= 10
 
 # File targets
 DATA_FILE = stac_data_$(shell date +%Y%m%d_%H%M%S).json
-OUTPUT_FILE = hotspots_$(shell date +%Y%m%d_%H%M%S).geojson
+OUTPUT_FILE = hotspots.geojson
 
 # Default target
 all: $(OUTPUT_FILE)
@@ -29,7 +29,7 @@ $(DATA_FILE): fetch.sh
 $(OUTPUT_FILE): $(DATA_FILE) cluster.sql
 	@echo "🔍 Processing hotspots with DuckDB..."
 	@sed "s|DATA_FILE_PLACEHOLDER|$<|g" cluster.sql | duckdb -json | jq '.[0].geojson' > $@
-	@echo "✅ Generated $(OUTPUT_FILE) with top $(TOP_N) hotspots"
+	@echo "✅ Generated hotspots.geojson with top $(TOP_N) hotspots"
 
 # Install dependencies
 install:
@@ -49,7 +49,7 @@ test: $(DATA_FILE)
 # Clean up generated files
 clean:
 	@echo "🧹 Cleaning up..."
-	rm -f stac_data_*.json hotspots_*.geojson
+	rm -f stac_data_*.json hotspots.geojson
 
 # Show help
 help:

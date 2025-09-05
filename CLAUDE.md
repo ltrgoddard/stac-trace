@@ -28,10 +28,10 @@ Minimal tool for exploring [STAC catalogues](https://stacspec.org/en). Ultimate 
 - This focuses on actual surveillance activity, not routine Earth observation
 
 ### Hotspot Detection Algorithm
-1. Grid-based clustering at 1°x1° resolution
-2. Merges adjacent cells to avoid boundary splitting
-3. Deterministic results through sorted processing
-4. Minimum threshold of 5 items per location
+1. Intersection-based clustering using spatial relationships
+2. Groups images that intersect/overlap with each other
+3. Uses connected components to find clusters of mutually intersecting images
+4. Minimum threshold of 5 items per hotspot
 5. Returns top locations with geocoded names
 
 ### Location Intelligence

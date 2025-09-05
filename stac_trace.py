@@ -877,10 +877,13 @@ def display_items(items: List[Dict], format: str = "table"):
 
 def analyze_recent_activity(items: List[Dict], taskable_only: bool = False) -> Dict[str, Any]:
     """Analyze patterns in recent imaging activity.
-    
+
     Clusters satellite imagery by location using grid-based clustering
     with adjacent cell merging to avoid boundary splitting. Returns
     hotspots sorted by surveillance intensity.
+
+    Note: The DuckDB SQL version uses intersection-based clustering
+    where hotspots are defined as groups of intersecting/overlapping images.
     """
     
     # Get taskable collection names if filtering

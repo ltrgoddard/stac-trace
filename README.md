@@ -169,7 +169,7 @@ Check surveillance history of a specific location:
 2. **Smart Filtering** - Focuses on high-resolution taskable satellites (≤0.75m) to identify intentional surveillance
 3. **Smart Pagination** - Automatically time-slices searches to bypass API limits (500 items/request)
 4. **Location Intelligence** - Uses OpenStreetMap's Nominatim for reverse geocoding
-5. **Pattern Detection** - Aggregates imagery by location grid to identify surveillance patterns
+5. **Pattern Detection** - Groups intersecting/overlapping images to identify surveillance hotspots
 
 ## Examples
 

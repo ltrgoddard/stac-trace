@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>STAC Hotspots - Satellite Surveillance Map</title>
+    <meta charset="utf-8">
+    <script src='https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.js'></script>
+    <link href='https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.css' rel='stylesheet' />
+    <style>
+        body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+        .info-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            max-width: 250px;
+            z-index: 1000;
+        }
+        .legend {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            z-index: 1000;
+        }
+        .hotspot-marker {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: radial-gradient(circle, #ff4444, #cc0000);
+            border: 2px solid white;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div class="info-panel">
+        <h3>🛰️ STAC Hotspots</h3>
+        <p><strong>Engine:</strong> Mapbox GL JS</p>
+        <p><strong>Projection:</strong> <span style="color: #4CAF50;">🌍 Globe</span></p>
+        <p><strong>Clustering:</strong> Intersection-based</p>
+        <p><strong>Merged Clusters:</strong> <span id="total-hotspots">0</span></p>
+        <p><strong>Total Images:</strong> <span id="total-images">0</span></p>
+        <p><strong>Date Range:</strong> Last 7 days</p>
+        <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #555; font-size: 11px; color: #ccc;">
+            Click clusters for details
+        </div>
+    </div>
+    </div>
+    <div class="legend">
+        <h4>🎯 Merged Hotspots</h4>
+        <div style="margin: 5px 0;">
+            <div style="display: flex; align-items: center; margin: 3px 0;">
+                <div style="width: 12px; height: 12px; background: #ffe6e6; border-radius: 2px; margin-right: 6px; border: 1px solid #ff9999;"></div>
+                <span style="font-size: 11px;">5-9 images</span>
+            </div>
+            <div style="display: flex; align-items: center; margin: 3px 0;">
+                <div style="width: 12px; height: 12px; background: #ff6b6b; border-radius: 2px; margin-right: 6px; border: 1px solid #ff4444;"></div>
+                <span style="font-size: 11px;">10-14 images</span>
+            </div>
+            <div style="display: flex; align-items: center; margin: 3px 0;">
+                <div style="width: 12px; height: 12px; background: #ff3333; border-radius: 2px; margin-right: 6px; border: 1px solid #cc0000;"></div>
+                <span style="font-size: 11px;">15+ images</span>
+            </div>
+        </div>
+        <div style="font-size: 11px; margin-top: 8px; color: #ccc;">
+            🌍 3D Globe View<br>
+            Numbers show image count per cluster
+        </div>
+    </div>
+
+    <script>
+        // Set Mapbox access token
+        mapboxgl.accessToken = 'pk.eyJ1IjoiZGF0YS1kZXNrIiwiYSI6ImNsYmNlcjl4bjBjd3UzcG55dHluaHYzbmQifQ.2wVVsUzF2BHBJ9ywCxCqWw';
+
+        // Wait for DOM to be ready
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize map with Mapbox GL JS and globe projection
+            const map = new mapboxgl.Map({
+                container: 'map',
+                style: 'mapbox://styles/mapbox/satellite-v9', // Satellite style for better globe visibility
+                center: [0, 20], // Center on equator
+                zoom: 1.5,
+                maxZoom: 18,
+                projection: 'globe' // Globe projection
+            });
+
+            console.log('🌍 Mapbox GL JS Globe Projection Initialized');
+
+            // Enhanced error handling
+            map.on('error', (e) => {
+                console.log('🚨 Map error:', e.error.message);
+                if (e.error.message.includes('projection') || e.error.message.includes('WebGL') || e.error.message.includes('globe')) {
+                    console.log('🔄 Attempting to force globe projection...');
+                    setTimeout(() => {
+                        try {
+                            map.setProjection('globe');
+                            console.log('✅ Globe projection forced successfully');
+                        } catch (retryError) {
+                            console.log('❌ Forced globe projection failed:', retryError.message);
+                            console.log('🔄 Falling back to mercator projection');
+                            try {
+                                map.setProjection('mercator');
+                            } catch (fallbackError) {
+                                console.log('❌ Fallback projection also failed');
+                            }
+                        }
+                    }, 1000);
+                }
+            });
+
+        let hotspotsData = null;
+        let totalImages = 0;
+        let totalHotspots = 0;
+
+        // Wait for map to load before adding data
+        map.on('load', () => {
+            console.log('🗺️ Map loaded, adding satellite data...');
+
+            // Load GeoJSON data
+            fetch('hotspots.geojson')
+                .then(response => response.json())
+                .then(data => {
+                    hotspotsData = data;
+                    totalHotspots = data.features.length; // Number of merged clusters
+
+                    // Sum up all images across clusters
+                    totalImages = data.features.reduce((sum, feature) => {
+                        return sum + (feature.properties.hotspot_image_count || 0);
+                    }, 0);
+
+                    // Update info panel
+                    document.getElementById('total-images').textContent = totalImages;
+                    document.getElementById('total-hotspots').textContent = totalHotspots;
+
+                    console.log(`✅ Loaded ${totalHotspots} merged clusters with ${totalImages} total images`);
+                    console.log('🎯 Each cluster represents merged intersecting satellite images');
+
+                    // Add data to map
+                    addDataToMap(data);
+                })
+                .catch(error => {
+                    console.error('Error loading GeoJSON:', error);
+                    document.querySelector('.info-panel').innerHTML = '<h3>Error</h3><p>Failed to load hotspots data</p>';
+                });
+        });
+
+        function addDataToMap(data) {
+            // Add satellite image footprints
+            map.addSource('satellite-images', {
+                type: 'geojson',
+                data: data
+            });
+
+            // Add fill layer for merged clusters
+            map.addLayer({
+                id: 'satellite-footprints',
+                type: 'fill',
+                source: 'satellite-images',
+                paint: {
+                    'fill-color': [
+                        'interpolate',
+                        ['linear'],
+                        ['get', 'hotspot_image_count'],
+                        5, '#ffe6e6',   // Light red for small clusters
+                        10, '#ff9999', // Medium red for medium clusters
+                        15, '#ff6b6b', // Default red for larger clusters
+                        25, '#ff3333'  // Dark red for large clusters
+                    ],
+                    'fill-opacity': 0.6,
+                    'fill-outline-color': '#ffffff'
+                }
+            });
+
+            // Add outline layer for merged clusters
+            map.addLayer({
+                id: 'satellite-outlines',
+                type: 'line',
+                source: 'satellite-images',
+                paint: {
+                    'line-color': '#ffffff',
+                    'line-width': 2,
+                    'line-opacity': 1.0
+                }
+            });
+
+            // Add cluster size labels
+            map.addLayer({
+                id: 'cluster-labels',
+                type: 'symbol',
+                source: 'satellite-images',
+                layout: {
+                    'text-field': ['get', 'hotspot_image_count'],
+                    'text-size': 12,
+                    'text-anchor': 'center',
+                    'text-justify': 'center'
+                },
+                paint: {
+                    'text-color': '#ffffff',
+                    'text-halo-color': '#000000',
+                    'text-halo-width': 2
+                }
+            });
+
+
+
+            // Add popups
+            map.on('click', 'satellite-footprints', (e) => {
+                const feature = e.features[0];
+                const props = feature.properties;
+
+                new mapboxgl.Popup()
+                    .setLngLat(e.lngLat)
+                    .setHTML(`
+                        <h4>🎯 Merged Satellite Cluster</h4>
+                        <p><strong>Cluster ID:</strong> ${props.hotspot_id}</p>
+                        <p><strong>Merged Images:</strong> ${props.hotspot_image_count}</p>
+                        <p><strong>Centroid:</strong> ${props.hotspot_centroid_lat.toFixed(2)}°, ${props.hotspot_centroid_lon.toFixed(2)}°</p>
+                        <p><strong>Primary Collection:</strong> ${props.primary_collection || 'Mixed'}</p>
+                        <p><strong>Latest Image:</strong> ${props.latest_datetime ? new Date(props.latest_datetime).toLocaleDateString() : 'N/A'}</p>
+                        <p><strong>Image IDs:</strong> ${props.image_ids ? props.image_ids.length + ' total' : 'N/A'}</p>
+                    `)
+                    .addTo(map);
+            });
+
+            // Change cursor on hover
+            map.on('mouseenter', 'satellite-footprints', () => {
+                map.getCanvas().style.cursor = 'pointer';
+            });
+            map.on('mouseleave', 'satellite-footprints', () => {
+                map.getCanvas().style.cursor = '';
+            });
+
+            // Fit bounds to show all data
+            const bounds = new mapboxgl.LngLatBounds();
+            data.features.forEach(feature => {
+                if (feature.geometry.type === 'Polygon') {
+                    // Handle single merged Polygon
+                    feature.geometry.coordinates[0].forEach(coord => {
+                        bounds.extend(coord);
+                    });
+                }
+            });
+
+            // Only fit bounds if we have coordinates
+            try {
+                // Check if bounds has been extended (has valid coordinates)
+                const boundsArray = bounds.toArray();
+                if (boundsArray && boundsArray.length === 2 &&
+                    boundsArray[0].length === 2 && boundsArray[1].length === 2) {
+                    map.fitBounds(bounds, { padding: 20 });
+                    console.log('📍 Map bounds fitted to merged clusters');
+                } else {
+                    console.log('⚠️ No valid bounds found, using default view');
+                }
+            } catch (error) {
+                console.log('⚠️ Could not fit bounds, using default view:', error.message);
+            }
+        }
+
+            // Add navigation controls
+            map.addControl(new mapboxgl.NavigationControl());
+            map.addControl(new mapboxgl.FullscreenControl());
+
+            // Enable globe rotation controls
+            map.on('load', () => {
+                console.log('🌍 Mapbox Globe Projection Active');
+                console.log('🖱️ Right-click and drag to rotate the globe');
+                console.log('🔍 Scroll to zoom, click satellite images for details');
+            });
+        });
+    </script>
+</body>
+</html>
