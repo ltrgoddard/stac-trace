@@ -18,8 +18,348 @@ load_dotenv()
 
 console = Console()
 
-# Simple in-memory cache for geocoding results
+# Simple in-memory cache for geocoding and infrastructure results
 geocode_cache = {}
+infrastructure_cache = {}
+
+
+def calculate_significance_score(element: Dict, tags: Dict) -> int:
+    """Calculate significance score for an infrastructure element.
+    
+    Higher scores indicate more strategic/important infrastructure.
+    """
+    score = 0
+    
+    # Base scoring by element type (larger features score higher)
+    if element.get("type") == "relation":
+        score += 15
+    elif element.get("type") == "way":
+        score += 10
+    elif element.get("type") == "node":
+        score += 5
+    
+    # Named features are more significant
+    if tags.get("name") and tags["name"] != "Unnamed":
+        score += 20
+    
+    # Wikipedia/Wikidata presence indicates major landmark
+    if tags.get("wikipedia") or tags.get("wikidata"):
+        score += 30
+    
+    # Operator suggests organized/major facility
+    if tags.get("operator"):
+        score += 10
+    
+    # Category-specific scoring (strategic importance)
+    if "military" in tags:
+        score += 100
+    if tags.get("aeroway") == "aerodrome":
+        score += 80
+    if tags.get("power") == "plant":
+        score += 70
+    if tags.get("amenity") == "embassy":
+        score += 60
+    if tags.get("amenity") == "government":
+        score += 50
+    if tags.get("amenity") == "university":
+        score += 40
+    if tags.get("amenity") == "hospital":
+        score += 35
+        # Large hospitals score higher
+        if tags.get("beds"):
+            try:
+                beds = int(tags["beds"])
+                score += min(beds // 10, 30)
+            except:
+                pass
+    if tags.get("telecom") == "data_center" or tags.get("building") == "data_center":
+        score += 45
+    if tags.get("railway") == "station":
+        score += 35
+    if tags.get("landuse") == "industrial" and tags.get("name"):
+        score += 30
+    
+    # Size indicators
+    if tags.get("building:levels"):
+        try:
+            levels = int(tags["building:levels"])
+            if levels > 10:
+                score += levels * 2
+        except:
+            pass
+    
+    if tags.get("capacity"):
+        try:
+            capacity = int(tags["capacity"])
+            score += min(capacity // 100, 20)
+        except:
+            pass
+    
+    # International/national importance
+    if tags.get("importance") == "international":
+        score += 40
+    elif tags.get("importance") == "national":
+        score += 30
+    elif tags.get("importance") == "regional":
+        score += 20
+    
+    return score
+
+
+def get_infrastructure_data(lat: float, lon: float, radius_km: float = 3) -> Dict[str, Any]:
+    """Query OpenStreetMap Overpass API for significant infrastructure and commercial activity.
+    
+    Fetches and intelligently filters infrastructure, prioritizing the most
+    significant facilities based on strategic importance, size, and notability.
+    Returns categorized infrastructure data for the location.
+    """
+    # Round to 0.1 degree for cache key (about 11km resolution)
+    cache_key = f"infra_{lat:.1f},{lon:.1f},{radius_km}"
+    
+    if cache_key in infrastructure_cache:
+        return infrastructure_cache[cache_key]
+    
+    # Convert radius to degrees (approximate)
+    radius_deg = radius_km / 111.0  # 1 degree latitude ≈ 111km
+    
+    # Build optimized Overpass QL query - focus on most significant items only
+    query = f"""
+    [out:json][timeout:25];
+    (
+      // Military and defense (Always significant)
+      way["military"](around:{radius_km * 1000},{lat},{lon});
+      relation["military"](around:{radius_km * 1000},{lat},{lon});
+
+      // Airports (Always significant)
+      way["aeroway"="aerodrome"](around:{radius_km * 1000},{lat},{lon});
+
+      // Government facilities (Named only)
+      way["amenity"="government"]["name"](around:{radius_km * 1000},{lat},{lon});
+      way["office"="government"]["name"](around:{radius_km * 1000},{lat},{lon});
+
+      // Power plants (Always significant)
+      way["power"="plant"](around:{radius_km * 1000},{lat},{lon});
+
+      // Major industrial (Named only)
+      way["landuse"="industrial"]["name"](around:{radius_km * 1000},{lat},{lon});
+
+      // Ports
+      way["harbour"](around:{radius_km * 1000},{lat},{lon});
+      way["landuse"="harbour"](around:{radius_km * 1000},{lat},{lon});
+
+      // Embassies and prisons
+      way["amenity"="embassy"](around:{radius_km * 1000},{lat},{lon});
+      way["amenity"="prison"](around:{radius_km * 1000},{lat},{lon});
+
+      // Major hospitals
+      way["amenity"="hospital"]["name"](around:{radius_km * 1000},{lat},{lon});
+
+      // Rail stations
+      way["railway"="station"]["name"](around:{radius_km * 1000},{lat},{lon});
+    );
+    out body;
+    >;
+    out skel qt;
+    """
+    
+    try:
+        # Query Overpass API with retry logic
+        url = "https://overpass-api.de/api/interpreter"
+        headers = {"User-Agent": "stac-trace/1.0"}
+        max_retries = 2
+
+        for attempt in range(max_retries + 1):
+            try:
+                response = requests.post(url, data=query, headers=headers, timeout=30)
+
+                if response.status_code == 200:
+                    break
+                elif response.status_code == 429:  # Rate limited
+                    if attempt < max_retries:
+                        time.sleep(2 ** attempt)  # Exponential backoff
+                        continue
+                    else:
+                        return {"error": "Overpass API rate limit exceeded"}
+                elif response.status_code >= 500:  # Server error
+                    if attempt < max_retries:
+                        time.sleep(1)
+                        continue
+                    else:
+                        return {"error": f"Overpass API server error: {response.status_code}"}
+                else:
+                    return {"error": f"Overpass API error: {response.status_code}"}
+
+            except requests.exceptions.Timeout:
+                if attempt < max_retries:
+                    continue
+                else:
+                    return {"error": "Overpass query timeout"}
+            except requests.exceptions.RequestException as e:
+                if attempt < max_retries:
+                    time.sleep(1)
+                    continue
+                else:
+                    return {"error": f"Network error: {str(e)}"}
+
+        # If we get here without breaking, all retries failed
+        if response.status_code != 200:
+            return {"error": f"Overpass API error after {max_retries + 1} attempts: {response.status_code}"}
+
+        data = response.json()
+        elements = data.get("elements", [])
+        
+        # Categorize infrastructure with expanded categories
+        infrastructure = {
+            "strategic": [],     # Military, government, embassies
+            "airports": [],      # Airports and aerodromes
+            "power": [],         # Power plants and major substations
+            "transport": [],     # Rail stations, ports, terminals
+            "technology": [],    # Data centers, telecom
+            "industrial": [],    # Major industrial facilities
+            "healthcare": [],    # Major hospitals
+            "education": [],     # Universities, research institutes
+            "commercial": [],    # Major commercial centers
+            "critical": []       # Prisons and other critical infrastructure
+        }
+        
+        # Process and score all elements
+        scored_elements = []
+        for element in elements:
+            tags = element.get("tags", {})
+            name = tags.get("name", tags.get("operator", "Unnamed"))
+            
+            # Calculate significance score
+            score = calculate_significance_score(element, tags)
+            
+            # Skip low-scoring unnamed features
+            if score < 15 and name == "Unnamed":
+                continue
+            
+            item = {
+                "name": name,
+                "element": element,
+                "tags": tags,
+                "score": score
+            }
+            
+            # Categorize by type with expanded categories
+            if "military" in tags:
+                item["type"] = tags.get("military", "facility")
+                item["category"] = "strategic"
+            elif tags.get("amenity") == "embassy":
+                item["type"] = "embassy"
+                item["category"] = "strategic"
+            elif tags.get("amenity") == "government" or tags.get("office") == "government":
+                item["type"] = tags.get("government", "office")
+                item["category"] = "strategic"
+            elif tags.get("aeroway") == "aerodrome":
+                item["type"] = tags.get("aerodrome:type", "airport")
+                item["category"] = "airports"
+            elif tags.get("power") == "plant":
+                item["type"] = f"power plant ({tags.get('plant:source', 'unknown')})"
+                item["category"] = "power"
+            elif tags.get("power") == "substation" and score >= 20:  # Only significant substations
+                item["type"] = "substation"
+                item["category"] = "power"
+            elif tags.get("railway") == "station":
+                item["type"] = "railway station"
+                item["category"] = "transport"
+            elif "harbour" in tags or tags.get("landuse") == "harbour":
+                item["type"] = "port/harbour"
+                item["category"] = "transport"
+            elif tags.get("aeroway") == "terminal":
+                item["type"] = "airport terminal"
+                item["category"] = "transport"
+            elif tags.get("telecom") == "data_center" or tags.get("building") == "data_center":
+                item["type"] = "data center"
+                item["category"] = "technology"
+            elif tags.get("amenity") == "hospital":
+                beds = tags.get("beds", "")
+                item["type"] = f"hospital ({beds} beds)" if beds else "hospital"
+                item["category"] = "healthcare"
+            elif tags.get("amenity") == "university":
+                item["type"] = "university"
+                item["category"] = "education"
+            elif tags.get("amenity") == "research_institute":
+                item["type"] = tags.get("research", "research institute")
+                item["category"] = "education"
+            elif tags.get("landuse") == "industrial" or tags.get("man_made") == "works":
+                item["type"] = tags.get("industrial", tags.get("product", "industrial facility"))
+                item["category"] = "industrial"
+            elif tags.get("shop") == "mall":
+                item["type"] = "shopping mall"
+                item["category"] = "commercial"
+            elif tags.get("amenity") == "bank":
+                item["type"] = "bank"
+                item["category"] = "commercial"
+            elif tags.get("office") == "company" and score >= 30:  # Only major offices
+                item["type"] = "corporate office"
+                item["category"] = "commercial"
+            elif tags.get("tourism") == "hotel" and score >= 25:  # Only significant hotels
+                item["type"] = "hotel"
+                item["category"] = "commercial"
+            elif tags.get("building") == "commercial" and score >= 35:  # Only large commercial buildings
+                levels = tags.get("building:levels", "")
+                item["type"] = f"commercial building ({levels} floors)" if levels else "commercial building"
+                item["category"] = "commercial"
+            elif tags.get("amenity") == "prison":
+                item["type"] = "prison"
+                item["category"] = "critical"
+            else:
+                continue  # Skip uncategorized items
+            
+            if "category" in item:
+                scored_elements.append(item)
+        
+        # Sort by score and take top items per category
+        scored_elements.sort(key=lambda x: x["score"], reverse=True)
+        
+        # Populate categories with top items only
+        category_limits = {
+            "strategic": 5,      # Show more strategic items
+            "airports": 3,
+            "power": 3,
+            "transport": 4,
+            "technology": 3,
+            "industrial": 3,
+            "healthcare": 2,
+            "education": 3,
+            "commercial": 3,
+            "critical": 2
+        }
+        
+        category_counts = {cat: 0 for cat in infrastructure.keys()}
+        
+        for item in scored_elements:
+            category = item["category"]
+            if category_counts[category] < category_limits[category]:
+                infrastructure[category].append({
+                    "name": item["name"],
+                    "type": item["type"],
+                    "score": item["score"]
+                })
+                category_counts[category] += 1
+        
+        # Remove empty categories and sort items by score within each category
+        result = {}
+        for category, items in infrastructure.items():
+            if items:
+                # Sort by score within category and remove score from output
+                items.sort(key=lambda x: x["score"], reverse=True)
+                for item in items:
+                    del item["score"]  # Remove score from final output
+                result[category] = items
+        
+        # Cache the result
+        infrastructure_cache[cache_key] = result
+        
+        # Be nice to the free service
+        time.sleep(0.5)
+        
+        return result
+        
+    except Exception as e:
+        return {"error": f"Unexpected error: {str(e)}"}
 
 
 def get_location_name(lat: float, lon: float) -> str:
@@ -627,7 +967,8 @@ def search(host, bbox, days, collection, cloud, limit, format):
 @click.option('--host', default='oneatlas', help='Host to analyze')
 @click.option('--days', default=7, help='Number of days to analyze')
 @click.option('--bbox', help='Bounding box (min_lon,min_lat,max_lon,max_lat)')
-def hotspots(host, days, bbox):
+@click.option('--infra', is_flag=True, default=False, help='Query infrastructure data for each hotspot')
+def hotspots(host, days, bbox, infra):
     """Find locations with recent imaging activity."""
     
     client = UP42Client()
@@ -673,7 +1014,7 @@ def hotspots(host, days, bbox):
     for collection, count in analysis['collections'].items():
         console.print(f"  • {collection}: {count} items")
     
-    # Hotspots with location names
+    # Hotspots with location names and infrastructure
     if analysis['hotspots']:
         threshold = analysis.get('min_threshold', 5)
         total_found = len(analysis['hotspots'])
@@ -683,7 +1024,7 @@ def hotspots(host, days, bbox):
         if total_found > 10:
             console.print(f"[dim]({total_found} total locations with ≥{int(threshold)} items)[/dim]")
         
-        # Show top 10 with geocoding
+        # Show top 10 with geocoding and infrastructure data
         for i, (location, count) in enumerate(analysis['hotspots'][:10]):
             lat, lon = map(float, location.split(','))
             location_name = get_location_name(lat, lon)
@@ -691,8 +1032,57 @@ def hotspots(host, days, bbox):
             # Create Google Earth URL (altitude ~50km for good regional view)
             earth_url = f"https://earth.google.com/web/@{lat},{lon},0a,50000d,35y,0h,0t,0r"
             
-            console.print(f"  {i+1:2}. {location_name} ({lat}, {lon}): {int(count)} items")
+            console.print(f"\n  {i+1:2}. [bold cyan]{location_name}[/bold cyan] ({lat}, {lon})")
+            console.print(f"      [green]{int(count)} satellite images[/green]")
             console.print(f"      [white]{earth_url}[/white]")
+            
+            # Query and display infrastructure data if enabled
+            if infra:
+                console.print(f"      [dim]Querying infrastructure...[/dim]", end="")
+                infra_data = get_infrastructure_data(lat, lon, radius_km=5)
+                
+                if "error" in infra_data:
+                    console.print(f"\r      [yellow]Infrastructure query failed[/yellow]                ")
+                elif infra_data:
+                    console.print(f"\r      [bold]Key infrastructure:[/bold]                    ")
+                    
+                    # Display categories in priority order
+                    category_display = {
+                        "strategic": ("Strategic", "[red]", True),      # name, color, show_type
+                        "airports": ("Airports", "[cyan]", False),
+                        "power": ("Power", "[yellow]", True),
+                        "transport": ("Transport", "[blue]", True),
+                        "technology": ("Tech/Data", "[magenta]", True),
+                        "industrial": ("Industrial", "[green]", False),
+                        "healthcare": ("Healthcare", "[white]", True),
+                        "education": ("Education", "[cyan]", False),
+                        "commercial": ("Commercial", "[dim white]", True),
+                        "critical": ("Critical", "[red]", True)
+                    }
+                    
+                    displayed_count = 0
+                    for category, items in infra_data.items():
+                        if items and displayed_count < 6:  # Limit total output
+                            label, color, show_type = category_display.get(category, (category.title(), "", True))
+                            
+                            if show_type:
+                                # Show with type information
+                                item_strings = []
+                                for item in items[:2]:  # Limit items per category
+                                    if item['name'] != "Unnamed":
+                                        item_strings.append(f"{item['name']} ({item['type']})")
+                                    else:
+                                        item_strings.append(f"{item['type']}")
+                                items_list = ', '.join(item_strings)
+                            else:
+                                # Just show names
+                                items_list = ', '.join([item['name'] for item in items[:3] if item['name'] != "Unnamed"])
+                            
+                            if items_list:
+                                console.print(f"        {color}• {label}:[/] {items_list}")
+                                displayed_count += 1
+                else:
+                    console.print(f"\r      [dim]No significant infrastructure found[/dim]                ")
     
     # Daily activity
     if analysis['daily_activity']:
