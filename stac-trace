@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+uv run python stac_trace.py "$@"
