@@ -580,6 +580,9 @@ class UP42Client:
         
         while current_date < end_dt:
             chunk_end = min(current_date + timedelta(days=chunk_days), end_dt)
+            # Ensure we don't create a 0-duration chunk
+            if chunk_end == current_date:
+                break
             
             if show_progress:
                 chunks_processed += 1
