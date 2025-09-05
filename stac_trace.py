@@ -387,21 +387,43 @@ def analyze_recent_activity(items: List[Dict]) -> Dict[str, Any]:
             except:
                 pass
         
-        # Track locations
+        # Track locations with overlapping grid cells to avoid boundary issues
         centroid = provider_props.get("geometryCentroid", {})
         if centroid:
-            lat_key = int(centroid.get('lat', 0))
-            lon_key = int(centroid.get('lon', 0))
-            loc_key = f"{lat_key},{lon_key}"
-            locations[loc_key] = locations.get(loc_key, 0) + 1
+            lat = centroid.get('lat', 0)
+            lon = centroid.get('lon', 0)
         else:
             # Try bbox
             bbox = item.get("bbox", [])
             if len(bbox) >= 4:
-                lat_key = int((bbox[1] + bbox[3]) / 2)
-                lon_key = int((bbox[0] + bbox[2]) / 2)
-                loc_key = f"{lat_key},{lon_key}"
-                locations[loc_key] = locations.get(loc_key, 0) + 1
+                lat = (bbox[1] + bbox[3]) / 2
+                lon = (bbox[0] + bbox[2]) / 2
+            else:
+                continue
+        
+        # Add to primary grid cell
+        lat_key = int(lat)
+        lon_key = int(lon)
+        loc_key = f"{lat_key},{lon_key}"
+        locations[loc_key] = locations.get(loc_key, 0) + 1
+        
+        # Also add to adjacent cells if close to boundary (within 0.2 degrees)
+        lat_frac = lat - lat_key
+        lon_frac = lon - lon_key
+        
+        if lat_frac > 0.8:  # Close to next latitude line
+            adj_key = f"{lat_key + 1},{lon_key}"
+            locations[adj_key] = locations.get(adj_key, 0) + 0.5  # Half weight
+        elif lat_frac < 0.2:  # Close to previous latitude line
+            adj_key = f"{lat_key - 1},{lon_key}"
+            locations[adj_key] = locations.get(adj_key, 0) + 0.5
+            
+        if lon_frac > 0.8:  # Close to next longitude line
+            adj_key = f"{lat_key},{lon_key + 1}"
+            locations[adj_key] = locations.get(adj_key, 0) + 0.5
+        elif lon_frac < 0.2:  # Close to previous longitude line
+            adj_key = f"{lat_key},{lon_key - 1}"
+            locations[adj_key] = locations.get(adj_key, 0) + 0.5
     
     # Find hotspots
     hotspots = sorted(locations.items(), key=lambda x: x[1], reverse=True)[:5]
@@ -561,7 +583,9 @@ def hotspots(host, days, bbox):
         for i, (location, count) in enumerate(analysis['hotspots']):
             lat, lon = map(float, location.split(','))
             location_name = get_location_name(lat, lon)
-            console.print(f"  • {location_name} ({lat}, {lon}): {count} items")
+            # Round count for display if it has fractional part from overlapping
+            display_count = int(count) if count == int(count) else f"{count:.1f}"
+            console.print(f"  • {location_name} ({lat}, {lon}): {display_count} items")
             
             # Limit geocoding calls for free service
             if i >= 4:  # Only do top 5
