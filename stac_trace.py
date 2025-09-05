@@ -620,7 +620,12 @@ def hotspots(host, days, bbox):
         for i, (location, count) in enumerate(analysis['hotspots'][:10]):
             lat, lon = map(float, location.split(','))
             location_name = get_location_name(lat, lon)
+            
+            # Create Google Earth URL (altitude ~50km for good regional view)
+            earth_url = f"https://earth.google.com/web/@{lat},{lon},0a,50000d,35y,0h,0t,0r"
+            
             console.print(f"  {i+1:2}. {location_name} ({lat}, {lon}): {int(count)} items")
+            console.print(f"      [white]{earth_url}[/white]")
     
     # Daily activity
     if analysis['daily_activity']:
