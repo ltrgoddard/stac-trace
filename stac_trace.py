@@ -609,20 +609,18 @@ def hotspots(host, days, bbox):
     # Hotspots with location names
     if analysis['hotspots']:
         threshold = analysis.get('min_threshold', 5)
-        console.print(f"\n[bold]Hotspots (≥{int(threshold)} items):[/bold]")
-        console.print(f"[dim]Found {len(analysis['hotspots'])} significant locations[/dim]")
+        total_found = len(analysis['hotspots'])
+        showing = min(10, total_found)
         
-        # Show all hotspots but limit geocoding to top 10 for API rate limits
-        for i, (location, count) in enumerate(analysis['hotspots']):
+        console.print(f"\n[bold]Top {showing} Hotspots:[/bold]")
+        if total_found > 10:
+            console.print(f"[dim]({total_found} total locations with ≥{int(threshold)} items)[/dim]")
+        
+        # Show top 10 with geocoding
+        for i, (location, count) in enumerate(analysis['hotspots'][:10]):
             lat, lon = map(float, location.split(','))
-            
-            # Only geocode top 10 to respect rate limits
-            if i < 10:
-                location_name = get_location_name(lat, lon)
-                console.print(f"  {i+1:2}. {location_name} ({lat}, {lon}): {int(count)} items")
-            else:
-                # Show coordinates only for remaining hotspots
-                console.print(f"  {i+1:2}. ({lat}, {lon}): {int(count)} items")
+            location_name = get_location_name(lat, lon)
+            console.print(f"  {i+1:2}. {location_name} ({lat}, {lon}): {int(count)} items")
     
     # Daily activity
     if analysis['daily_activity']:
