@@ -425,8 +425,47 @@ def analyze_recent_activity(items: List[Dict]) -> Dict[str, Any]:
             adj_key = f"{lat_key},{lon_key - 1}"
             locations[adj_key] = locations.get(adj_key, 0) + 0.5
     
-    # Find hotspots
-    hotspots = sorted(locations.items(), key=lambda x: x[1], reverse=True)[:5]
+    # Merge adjacent hotspots before sorting
+    merged_locations = {}
+    processed = set()
+    
+    for loc_key, count in locations.items():
+        if loc_key in processed:
+            continue
+            
+        lat, lon = map(int, loc_key.split(','))
+        cluster_count = count
+        cluster_lats = [lat]
+        cluster_lons = [lon]
+        processed.add(loc_key)
+        
+        # Check all 8 adjacent cells
+        for dlat in [-1, 0, 1]:
+            for dlon in [-1, 0, 1]:
+                if dlat == 0 and dlon == 0:
+                    continue
+                adj_key = f"{lat + dlat},{lon + dlon}"
+                if adj_key in locations and adj_key not in processed:
+                    # Merge if adjacent cell has significant activity (>50% of current)
+                    if locations[adj_key] > count * 0.3:
+                        cluster_count += locations[adj_key]
+                        cluster_lats.append(lat + dlat)
+                        cluster_lons.append(lon + dlon)
+                        processed.add(adj_key)
+        
+        # Use center of cluster as key
+        center_lat = sum(cluster_lats) // len(cluster_lats)
+        center_lon = sum(cluster_lons) // len(cluster_lons)
+        cluster_key = f"{center_lat},{center_lon}"
+        
+        # Keep the higher count if we already have this cluster center
+        if cluster_key in merged_locations:
+            merged_locations[cluster_key] = max(merged_locations[cluster_key], cluster_count)
+        else:
+            merged_locations[cluster_key] = cluster_count
+    
+    # Find top hotspots from merged clusters
+    hotspots = sorted(merged_locations.items(), key=lambda x: x[1], reverse=True)[:5]
     
     return {
         "total_items": len(items),
