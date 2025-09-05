@@ -1109,7 +1109,8 @@ def search(host, bbox, days, collection, cloud, limit, format):
 @click.option('--bbox', help='Bounding box (min_lon,min_lat,max_lon,max_lat)')
 @click.option('--infra', is_flag=True, default=False, help='Query infrastructure data for each hotspot')
 @click.option('--min-chunk-hours', default=1, type=int, help='Minimum chunk size in hours for API calls (default: 1)')
-def hotspots(host, days, bbox, infra, min_chunk_hours):
+@click.option('--all', is_flag=True, help='Show all hotspots (not just top 10)')
+def hotspots(host, days, bbox, infra, min_chunk_hours, all):
     """Find locations with recent imaging activity."""
     
     client = UP42Client()
@@ -1167,14 +1168,17 @@ def hotspots(host, days, bbox, infra, min_chunk_hours):
     if analysis['hotspots']:
         threshold = analysis.get('min_threshold', 5)
         total_found = len(analysis['hotspots'])
-        showing = min(10, total_found)
-        
+        showing = total_found if all else min(10, total_found)
+
         console.print(f"\n[bold]Top {showing} Hotspots:[/bold]")
-        if total_found > 10:
+        if total_found > 10 and not all:
             console.print(f"[dim]({total_found} total locations with ≥{int(threshold)} items)[/dim]")
-        
-        # Show top 10 with geocoding and infrastructure data
-        for i, (location, count) in enumerate(analysis['hotspots'][:10]):
+        elif all:
+            console.print(f"[dim](Showing all {total_found} locations with ≥{int(threshold)} items)[/dim]")
+
+        # Show hotspots (all or top 10)
+        hotspots_to_show = analysis['hotspots'] if all else analysis['hotspots'][:10]
+        for i, (location, count) in enumerate(hotspots_to_show):
             lat, lon = map(float, location.split(','))
             location_name = get_location_name(lat, lon)
             
