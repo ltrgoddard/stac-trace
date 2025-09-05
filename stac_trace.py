@@ -523,7 +523,18 @@ class UP42Client:
             console.print(f"[red]Error: {response.status_code} - {response.text}[/red]")
             return {}
             
-        return response.json()
+        data = response.json()
+
+        # Check for pagination in STAC response
+        items = data.get("features", [])
+        links = data.get("links", [])
+        has_next = any(link.get("rel") == "next" for link in links)
+
+        # If we got exactly the limit and there's a next link, warn about potential missing items
+        if len(items) == 500 and has_next:
+            console.print(f"  [yellow]Warning: Got 500 items with more results available. Consider using smaller time chunks.[/yellow]")
+
+        return data
     
     def search_catalog_deep(self, 
                            host: str = "oneatlas",
@@ -589,17 +600,49 @@ class UP42Client:
                 console.print(f"  Searching {current_date.date()} to {chunk_end.date()}... ", end="")
             
             result = self.search_catalog(
-                host=host, 
-                bbox=bbox, 
+                host=host,
+                bbox=bbox,
                 start_date=current_date.isoformat() + "Z",
                 end_date=chunk_end.isoformat() + "Z",
-                collections=collections, 
-                limit=500, 
+                collections=collections,
+                limit=500,
                 cloud_coverage=cloud_coverage
             )
-            
+
             items = result.get("features", [])
             all_items.extend(items)
+
+            # Check for pagination and try to get remaining items
+            links = result.get("links", [])
+            next_link = next((link for link in links if link.get("rel") == "next"), None)
+
+            # If we hit the limit and there's pagination, try to get more items
+            while len(items) == 500 and next_link:
+                if show_progress:
+                    console.print(f"  [dim]Fetching additional page...[/dim]", end="")
+
+                # Make request to next page
+                next_response = requests.get(
+                    next_link["href"],
+                    headers=self.headers
+                )
+
+                if next_response.status_code == 200:
+                    next_data = next_response.json()
+                    next_items = next_data.get("features", [])
+                    all_items.extend(next_items)
+                    items = next_items  # Update for next iteration
+
+                    # Check for another next link
+                    next_links = next_data.get("links", [])
+                    next_link = next((link for link in next_links if link.get("rel") == "next"), None)
+
+                    if show_progress:
+                        console.print(f" [green]+{len(next_items)} items[/green] (total: {len(all_items)})")
+                else:
+                    if show_progress:
+                        console.print(f" [red]Failed to fetch next page[/red]")
+                    break
             
             if show_progress:
                 console.print(f"[green]{len(items)} items[/green] (total: {len(all_items)})")
@@ -609,6 +652,10 @@ class UP42Client:
                 chunk_days = max(1, chunk_days // 2)
                 if show_progress:
                     console.print(f"  [yellow]Hit limit, reducing chunk size to {chunk_days} days[/yellow]")
+            # If we still hit the limit with 1-day chunks, warn the user
+            elif len(items) == 500 and chunk_days == 1:
+                if show_progress:
+                    console.print(f"  [yellow]Warning: Still hitting 500-item limit with 1-day chunks. May be missing items.[/yellow]")
             
             current_date = chunk_end
 
