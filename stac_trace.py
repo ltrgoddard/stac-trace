@@ -989,21 +989,26 @@ def hotspots(host, days, bbox, infra):
             return
     
     console.print(f"[cyan]Analyzing {host} activity from {start_date.date()} to {end_date.date()}...[/cyan]")
-    
-    # Use deep search to get ALL items (handles 500-item limit automatically)
+
+    # Get taskable collection names to filter at API level (more efficient)
+    taskable_collections = client.get_taskable_collections()
+    console.print(f"[dim]Found {len(taskable_collections)} taskable collections: {', '.join(taskable_collections[:5])}{'...' if len(taskable_collections) > 5 else ''}[/dim]")
+
+    # Use deep search to get ALL items from taskable collections only (handles 500-item limit automatically)
     items = client.search_catalog_deep(
         host=host,
         bbox=bbox_list,
         start_date=start_date.isoformat().replace("+00:00", "Z"),
-        end_date=end_date.isoformat().replace("+00:00", "Z")
+        end_date=end_date.isoformat().replace("+00:00", "Z"),
+        collections=taskable_collections
     )
     
     if not items:
         console.print("[yellow]No items found[/yellow]")
         return
     
-    # Analyze activity (filtering to only taskable high-res satellites)
-    analysis = analyze_recent_activity(items, taskable_only=True)
+    # Analyze activity (already filtered to taskable collections at API level)
+    analysis = analyze_recent_activity(items, taskable_only=False)
     
     # Display analysis
     console.print("\n[bold]Activity Analysis[/bold]")
