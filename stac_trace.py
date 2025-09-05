@@ -564,15 +564,15 @@ class UP42Client:
         # Calculate time span
         time_span = (end_dt - start_dt).days
         
-        # If less than 7 days, do single search
-        if time_span <= 7:
+        # If less than 2 days, do single search
+        if time_span <= 2:
             result = self.search_catalog(
                 host=host, bbox=bbox, start_date=start_date, end_date=end_date,
                 collections=collections, limit=500, cloud_coverage=cloud_coverage
             )
             return result.get("features", [])
         
-        # Otherwise, split into chunks (5-day chunks work well)
+        # Otherwise, split into chunks (5-day chunks work well, ensures we get all items even with 500-item limit)
         chunk_days = 5
         current_date = start_dt
         chunks_processed = 0
@@ -608,7 +608,10 @@ class UP42Client:
                     console.print(f"  [yellow]Hit limit, reducing chunk size to {chunk_days} days[/yellow]")
             
             current_date = chunk_end
-        
+
+        if show_progress and chunks_processed > 1:
+            console.print(f"  [green]Completed {chunks_processed} chunks, total items: {len(all_items)}[/green]")
+
         return all_items
     
     def get_collections(self, max_resolution: Optional[float] = None) -> List[Dict[str, Any]]:
