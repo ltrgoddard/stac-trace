@@ -988,8 +988,8 @@ def analyze_recent_activity(items: List[Dict], taskable_only: bool = False) -> D
     # Sort all hotspots by count
     all_hotspots = sorted(merged_locations.items(), key=lambda x: (-x[1], x[0]))
     
-    # Calculate threshold (e.g., at least 5 items or 1% of total items, but cap at reasonable maximum)
-    min_threshold = max(5, min(50, len(items) * 0.01))
+    # Calculate threshold (e.g., at least 5 items or 0.5% of total items)
+    min_threshold = max(5, len(items) * 0.005)
     
     # Filter hotspots above threshold
     significant_hotspots = [(loc, count) for loc, count in all_hotspots if count >= min_threshold]
