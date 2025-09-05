@@ -15,6 +15,7 @@ A command-line tool for exploring STAC (SpatioTemporal Asset Catalog) catalogues
 - 📈 **Temporal analysis** - Track surveillance patterns over time
 - 🚀 **No API limits** - Automatically bypasses provider limits with smart time-slicing
 - 🗺️ **Global coverage** - Search anywhere from local to planetary scale
+- 🦆 **DuckDB Pipeline** - Ultra-minimal hotspots analysis with spatial processing
 
 ## Installation
 
@@ -97,6 +98,35 @@ Track what's been watching a particular place:
 ```bash
 # Check surveillance of Manhattan
 ./stac-trace watch --lat 40.7128 --lon -74.0060 --days 30
+```
+
+### DuckDB Pipeline (Minimal)
+
+For ultra-minimal hotspots analysis with spatial processing:
+
+```bash
+# Run the complete pipeline
+make
+
+# Or manually:
+./fetch.sh 7 | duckdb -json < cluster.sql > hotspots.geojson
+
+# Custom parameters
+make HOST=capella DAYS=30 BBOX='-122.5,37.5,-122.0,38.0'
+```
+
+The DuckDB pipeline:
+1. **fetch.sh** - Downloads STAC data from UP42 API (with automatic time-slicing)
+2. **cluster.sql** - Processes with DuckDB spatial extension
+3. **Output** - Nested GeoJSON FeatureCollections
+
+Features:
+- ⚡ **Fast processing** - DuckDB columnar engine
+- 🗺️ **Native spatial** - Built-in geospatial functions
+- 📦 **Minimal deps** - Just DuckDB and curl
+- 🔧 **Configurable** - Makefile with proper file targets
+- 🚀 **No API limits** - Automatic time-slicing bypasses 500-item limit
+- 📊 **Scalable** - Handles thousands of images efficiently
 
 # Monitor with larger radius
 ./stac-trace watch --lat 50.45 --lon 30.52 --radius 0.5 --days 14
