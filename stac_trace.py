@@ -988,8 +988,8 @@ def analyze_recent_activity(items: List[Dict], taskable_only: bool = False) -> D
     # Sort all hotspots by count
     all_hotspots = sorted(merged_locations.items(), key=lambda x: (-x[1], x[0]))
     
-    # Calculate threshold (e.g., at least 5 items or 1% of total items)
-    min_threshold = max(5, len(items) * 0.01)
+    # Calculate threshold (e.g., at least 5 items or 1% of total items, but cap at reasonable maximum)
+    min_threshold = max(5, min(50, len(items) * 0.01))
     
     # Filter hotspots above threshold
     significant_hotspots = [(loc, count) for loc, count in all_hotspots if count >= min_threshold]
@@ -1151,11 +1151,13 @@ def hotspots(host, days, bbox, infra, min_chunk_hours):
     
     # Analyze activity (already filtered to taskable collections at API level)
     analysis = analyze_recent_activity(items, taskable_only=False)
-    
+
     # Display analysis
     console.print("\n[bold]Activity Analysis[/bold]")
     console.print(f"Total items: {analysis['total_items']}")
-    
+    console.print(f"Min threshold: {analysis.get('min_threshold', 'N/A')}")
+    console.print(f"Raw locations found: {len(analysis.get('hotspots', []))}")
+
     # Collections breakdown
     console.print("\n[bold]Collections:[/bold]")
     for collection, count in analysis['collections'].items():
