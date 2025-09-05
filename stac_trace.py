@@ -411,7 +411,10 @@ def analyze_recent_activity(items: List[Dict]) -> Dict[str, Any]:
     merged_locations = {}
     processed = set()
     
-    for loc_key, count in locations.items():
+    # Sort locations by count (descending) then by key for deterministic processing
+    sorted_locations = sorted(locations.items(), key=lambda x: (-x[1], x[0]))
+    
+    for loc_key, count in sorted_locations:
         if loc_key in processed:
             continue
             
@@ -428,7 +431,7 @@ def analyze_recent_activity(items: List[Dict]) -> Dict[str, Any]:
                     continue
                 adj_key = f"{lat + dlat},{lon + dlon}"
                 if adj_key in locations and adj_key not in processed:
-                    # Merge if adjacent cell has significant activity (>50% of current)
+                    # Merge if adjacent cell has significant activity (>30% of current)
                     if locations[adj_key] > count * 0.3:
                         cluster_count += locations[adj_key]
                         cluster_lats.append(lat + dlat)
@@ -446,13 +449,20 @@ def analyze_recent_activity(items: List[Dict]) -> Dict[str, Any]:
         else:
             merged_locations[cluster_key] = cluster_count
     
-    # Find top hotspots from merged clusters
-    hotspots = sorted(merged_locations.items(), key=lambda x: x[1], reverse=True)[:5]
+    # Sort all hotspots by count
+    all_hotspots = sorted(merged_locations.items(), key=lambda x: (-x[1], x[0]))
+    
+    # Calculate threshold (e.g., at least 5 items or 1% of total items)
+    min_threshold = max(5, len(items) * 0.01)
+    
+    # Filter hotspots above threshold
+    significant_hotspots = [(loc, count) for loc, count in all_hotspots if count >= min_threshold]
     
     return {
         "total_items": len(items),
         "collections": collections_count,
-        "hotspots": hotspots,
+        "hotspots": significant_hotspots,
+        "min_threshold": min_threshold,
         "daily_activity": dict(sorted(daily_count.items())[-7:])  # Last 7 days
     }
 
@@ -598,17 +608,21 @@ def hotspots(host, days, bbox):
     
     # Hotspots with location names
     if analysis['hotspots']:
-        console.print("\n[bold]Top Hotspots:[/bold]")
-        console.print("[dim]Fetching location names...[/dim]")
+        threshold = analysis.get('min_threshold', 5)
+        console.print(f"\n[bold]Hotspots (≥{int(threshold)} items):[/bold]")
+        console.print(f"[dim]Found {len(analysis['hotspots'])} significant locations[/dim]")
         
+        # Show all hotspots but limit geocoding to top 10 for API rate limits
         for i, (location, count) in enumerate(analysis['hotspots']):
             lat, lon = map(float, location.split(','))
-            location_name = get_location_name(lat, lon)
-            console.print(f"  • {location_name} ({lat}, {lon}): {int(count)} items")
             
-            # Limit geocoding calls for free service
-            if i >= 4:  # Only do top 5
-                break
+            # Only geocode top 10 to respect rate limits
+            if i < 10:
+                location_name = get_location_name(lat, lon)
+                console.print(f"  {i+1:2}. {location_name} ({lat}, {lon}): {int(count)} items")
+            else:
+                # Show coordinates only for remaining hotspots
+                console.print(f"  {i+1:2}. ({lat}, {lon}): {int(count)} items")
     
     # Daily activity
     if analysis['daily_activity']:
