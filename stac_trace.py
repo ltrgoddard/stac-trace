@@ -183,7 +183,8 @@ class UP42Client:
                            end_date: Optional[str] = None,
                            collections: Optional[List[str]] = None,
                            cloud_coverage: Optional[int] = None,
-                           show_progress: bool = True) -> List[Dict]:
+                           show_progress: bool = True,
+                           taskable_only: bool = False) -> List[Dict]:
         """Deep search that automatically handles API limits by time-slicing."""
         
         all_items = []
@@ -256,8 +257,8 @@ class UP42Client:
         
         return all_items
     
-    def get_collections(self) -> List[Dict[str, Any]]:
-        """Get available collections from UP42 catalog."""
+    def get_collections(self, max_resolution: Optional[float] = None) -> List[Dict[str, Any]]:
+        """Get available collections from UP42 catalog, optionally filtered by resolution."""
         collections_endpoint = f"{self.base_url}/collections"
         
         response = requests.get(
@@ -270,7 +271,26 @@ class UP42Client:
             return []
             
         data = response.json()
-        return data.get("data", [])
+        collections = data.get("data", [])
+        
+        if max_resolution:
+            filtered = []
+            for collection in collections:
+                # Get resolution value in meters
+                res_val = collection.get("resolutionValue", {})
+                if res_val.get("minimum"):
+                    resolution = res_val["minimum"]
+                    if resolution <= max_resolution:
+                        filtered.append(collection)
+            return filtered
+        
+        return collections
+    
+    def get_taskable_collections(self) -> List[str]:
+        """Get list of collection names for high-resolution taskable imagery."""
+        # Filter to collections with ≤0.75m resolution (taskable satellites)
+        high_res_collections = self.get_collections(max_resolution=0.75)
+        return [c["name"] for c in high_res_collections]
 
 
 def display_items(items: List[Dict], format: str = "table"):
@@ -356,20 +376,32 @@ def display_items(items: List[Dict], format: str = "table"):
         console.print(table)
 
 
-def analyze_recent_activity(items: List[Dict]) -> Dict[str, Any]:
+def analyze_recent_activity(items: List[Dict], taskable_only: bool = False) -> Dict[str, Any]:
     """Analyze patterns in recent imaging activity."""
+    
+    # Get taskable collection names if filtering
+    taskable_collections = set()
+    if taskable_only:
+        client = UP42Client()
+        taskable_collections = set(client.get_taskable_collections())
     
     locations = {}
     collections_count = {}
     daily_count = {}
+    filtered_items = []
     
     for item in items:
         properties = item.get("properties", {})
         provider_props = properties.get("providerProperties", {})
         
-        # Count by collection/constellation
+        # Get collection/constellation name
         collection = properties.get("constellation", 
                     properties.get("collection", "unknown"))
+        
+        # Skip if filtering for taskable and this isn't in taskable list
+        if taskable_only and taskable_collections and collection not in taskable_collections:
+            continue
+            
         collections_count[collection] = collections_count.get(collection, 0) + 1
         
         # Count by date
@@ -474,19 +506,30 @@ def cli():
 
 
 @cli.command()
-def collections():
+@click.option('--all', is_flag=True, help='Show all collections (default: only taskable high-res)')
+def collections(all):
     """List available collections in the UP42 catalog."""
     client = UP42Client()
-    collections = client.get_collections()
+    
+    if all:
+        collections = client.get_collections()
+        title = f"All Available Collections ({len(collections)})"
+    else:
+        # Show only high-resolution taskable collections by default
+        collections = client.get_collections(max_resolution=0.75)
+        title = f"High-Resolution Taskable Collections ({len(collections)}) - ≤0.75m resolution"
     
     if not collections:
         return
         
-    table = Table(title=f"Available Collections ({len(collections)})")
+    table = Table(title=title)
     table.add_column("Name", style="cyan")
     table.add_column("Host", style="green")
     table.add_column("Type", style="yellow")
     table.add_column("Resolution", style="magenta")
+    
+    # Sort by resolution for better readability
+    collections.sort(key=lambda x: x.get("resolutionValue", {}).get("minimum", 999))
     
     for collection in collections:
         # Get resolution value
@@ -594,8 +637,8 @@ def hotspots(host, days, bbox):
         console.print("[yellow]No items found[/yellow]")
         return
     
-    # Analyze activity
-    analysis = analyze_recent_activity(items)
+    # Analyze activity (filtering to only taskable high-res satellites)
+    analysis = analyze_recent_activity(items, taskable_only=True)
     
     # Display analysis
     console.print("\n[bold]Activity Analysis[/bold]")
