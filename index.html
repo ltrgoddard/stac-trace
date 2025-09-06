@@ -211,7 +211,29 @@
                 }
             });
 
+            // Add minimal tooltips
+            map.on('click', 'satellite-footprints', (e) => {
+                const feature = e.features[0];
+                const props = feature.properties;
 
+                new mapboxgl.Popup()
+                    .setLngLat(e.lngLat)
+                    .setHTML(`
+                        <div style="font-family: monospace; font-size: 11px;">
+                            <strong>${props.constellation}</strong><br>
+                            ${new Date(props.datetime).toLocaleDateString()}
+                        </div>
+                    `)
+                    .addTo(map);
+            });
+
+            // Change cursor on hover
+            map.on('mouseenter', 'satellite-footprints', () => {
+                map.getCanvas().style.cursor = 'pointer';
+            });
+            map.on('mouseleave', 'satellite-footprints', () => {
+                map.getCanvas().style.cursor = '';
+            });
 
             // Fit bounds to show all data
             const bounds = new mapboxgl.LngLatBounds();
