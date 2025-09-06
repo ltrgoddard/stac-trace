@@ -211,33 +211,7 @@
                 }
             });
 
-            // Add popups for individual images
-            map.on('click', 'satellite-footprints', (e) => {
-                const feature = e.features[0];
-                const props = feature.properties;
 
-                new mapboxgl.Popup()
-                    .setLngLat(e.lngLat)
-                    .setHTML(`
-                        <h4>🛰️ Satellite Image</h4>
-                        <p><strong>Image ID:</strong> ${props.id}</p>
-                        <p><strong>Constellation:</strong> ${props.constellation}</p>
-                        <p><strong>Collection:</strong> ${props.collection}</p>
-                        <p><strong>Resolution:</strong> ${props.resolution}m</p>
-                        <p><strong>Cloud Cover:</strong> ${props.cloudCoverage ? props.cloudCoverage.toFixed(1) + '%' : 'N/A'}</p>
-                        <p><strong>Date:</strong> ${new Date(props.datetime).toLocaleDateString()}</p>
-                        <p><strong>Provider:</strong> ${props.providerName}</p>
-                    `)
-                    .addTo(map);
-            });
-
-            // Change cursor on hover
-            map.on('mouseenter', 'satellite-footprints', () => {
-                map.getCanvas().style.cursor = 'pointer';
-            });
-            map.on('mouseleave', 'satellite-footprints', () => {
-                map.getCanvas().style.cursor = '';
-            });
 
             // Fit bounds to show all data
             const bounds = new mapboxgl.LngLatBounds();

@@ -58,7 +58,7 @@ if [[ $TOTAL_HOURS -gt 24 ]]; then
             echo "  Fetching $CURRENT_DATE to $CHUNK_END..." >&2
 
             # Build search payload for this chunk
-            PAYLOAD="{\"datetime\":\"$CURRENT_DATE/$CHUNK_END\",\"limit\":500}"
+            PAYLOAD="{\"datetime\":\"$CURRENT_DATE/$CHUNK_END\",\"limit\":500,\"query\":{\"resolution\":{\"lte\":0.75}}}"
             if [[ -n "$BBOX" ]]; then
               PAYLOAD="${PAYLOAD%,*}","bbox\":[$BBOX]}"
             fi
@@ -80,7 +80,7 @@ if [[ $TOTAL_HOURS -gt 24 ]]; then
     }'
 else
     # Single request for small ranges
-    PAYLOAD="{\"datetime\":\"$START_DATE/$END_DATE\",\"limit\":500}"
+    PAYLOAD="{\"datetime\":\"$START_DATE/$END_DATE\",\"limit\":500,\"query\":{\"resolution\":{\"lte\":0.75}}}"
     if [[ -n "$BBOX" ]]; then
       PAYLOAD="${PAYLOAD%,*}","bbox\":[$BBOX]}"
     fi
