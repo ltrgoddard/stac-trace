@@ -234,13 +234,17 @@
                 }
             });
 
-            // Add minimal tooltips
-            map.on('click', 'satellite-footprints', (e) => {
+            // Add minimal tooltips on hover
+            let currentPopup = null;
+
+            map.on('mouseenter', 'satellite-footprints', (e) => {
                 const feature = e.features[0];
                 const props = feature.properties;
 
-                new mapboxgl.Popup({
-                    className: 'dark-tooltip'
+                currentPopup = new mapboxgl.Popup({
+                    className: 'dark-tooltip',
+                    closeButton: false,
+                    closeOnClick: false
                 })
                     .setLngLat(e.lngLat)
                     .setHTML(`
@@ -251,6 +255,13 @@
                         </div>
                     `)
                     .addTo(map);
+            });
+
+            map.on('mouseleave', 'satellite-footprints', () => {
+                if (currentPopup) {
+                    currentPopup.remove();
+                    currentPopup = null;
+                }
             });
 
             // Change cursor on hover
