@@ -80,31 +80,17 @@
             border: 1px solid #ffffff;
         }
 
-        /* Transparent black tooltip styling */
-        .dark-tooltip .mapboxgl-popup-content {
-            background: rgba(0, 0, 0, 0.9);
-            color: #00ff00;
-            border: 1px solid #00ff00;
-            font-family: 'Courier New', monospace;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
 
-        .dark-tooltip .mapboxgl-popup-tip {
-            border-top-color: rgba(0, 0, 0, 0.9);
-        }
     </style>
 </head>
 <body>
     <div id="map"></div>
     <div class="info-panel">
-        <h3>STAC HOTSPOTS</h3>
-        <p><strong>ENGINE:</strong> MAPBOX GL JS</p>
-        <p><strong>PROJECTION:</strong> GLOBE</p>
-        <p><strong>DATA:</strong> HIGH-RES STAC (≤75cm)</p>
+        <h3>STAC TRACE</h3>
         <p><strong>IMAGES:</strong> <span id="total-images">0</span></p>
-        <p><strong>RANGE:</strong> LAST 7 DAYS</p>
-
+        <div id="image-info" style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #00ff00; font-size: 10px;">
+            HOVER OVER IMAGES FOR DETAILS
+        </div>
     </div>
     </div>
 
@@ -236,34 +222,20 @@
                 }
             });
 
-            // Add minimal tooltips on hover
-            let currentPopup = null;
-
+            // Update info panel on hover
             map.on('mouseenter', 'satellite-footprints', (e) => {
                 const feature = e.features[0];
                 const props = feature.properties;
 
-                currentPopup = new mapboxgl.Popup({
-                    className: 'dark-tooltip',
-                    closeButton: false,
-                    closeOnClick: false
-                })
-                    .setLngLat(e.lngLat)
-                    .setHTML(`
-                        <div style="font-family: monospace; font-size: 11px;">
-                            <strong>${props.constellation?.toUpperCase()}</strong><br>
-                            ${new Date(props.datetime).toLocaleString()}<br>
-                            ${props.resolution}m resolution
-                        </div>
-                    `)
-                    .addTo(map);
+                document.getElementById('image-info').innerHTML = `
+                    <strong>${props.constellation?.toUpperCase()}</strong><br>
+                    ${new Date(props.datetime).toLocaleString()}<br>
+                    ${props.resolution}m resolution
+                `;
             });
 
             map.on('mouseleave', 'satellite-footprints', () => {
-                if (currentPopup) {
-                    currentPopup.remove();
-                    currentPopup = null;
-                }
+                document.getElementById('image-info').innerHTML = 'HOVER OVER IMAGES FOR DETAILS';
             });
 
             // Change cursor on hover
