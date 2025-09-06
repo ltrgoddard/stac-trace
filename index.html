@@ -231,6 +231,7 @@
 
             // Update info panel on hover
             map.on('mouseenter', 'satellite-footprints', (e) => {
+                console.log('Hover entered:', e.features[0].properties.constellation);
                 const feature = e.features[0];
                 const props = feature.properties;
 
@@ -242,6 +243,7 @@
             });
 
             map.on('mouseleave', 'satellite-footprints', () => {
+                console.log('Hover left');
                 document.getElementById('image-info').innerHTML = 'HOVER OVER IMAGES FOR DETAILS';
             });
 
