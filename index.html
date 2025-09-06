@@ -252,7 +252,7 @@
                     .setHTML(`
                         <div style="font-family: monospace; font-size: 11px;">
                             <strong>${props.constellation?.toUpperCase()}</strong><br>
-                            ${new Date(props.datetime).toLocaleDateString()}<br>
+                            ${new Date(props.datetime).toLocaleString()}<br>
                             ${props.resolution}m resolution
                         </div>
                     `)
