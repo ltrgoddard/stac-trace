@@ -87,8 +87,8 @@
         <h3>STAC HOTSPOTS</h3>
         <p><strong>ENGINE:</strong> MAPBOX GL JS</p>
         <p><strong>PROJECTION:</strong> GLOBE</p>
-        <p><strong>CLUSTERING:</strong> INTERSECTION</p>
-        <p><strong>CLUSTERS:</strong> <span id="total-hotspots">0</span></p>
+        <p><strong>DATA:</strong> RAW STAC</p>
+        <p><strong>IMAGES:</strong> <span id="total-images">0</span></p>
         <p><strong>IMAGES:</strong> <span id="total-images">0</span></p>
         <p><strong>RANGE:</strong> LAST 7 DAYS</p>
 
@@ -159,24 +159,19 @@
         map.on('load', () => {
             console.log('> LOADING SATELLITE DATA...');
 
-            // Load GeoJSON data
-            fetch('data/hotspots.geojson')
+            // Load raw STAC data
+            fetch('data/stac_data_20250906_204220.json')
                 .then(response => response.json())
                 .then(data => {
                     hotspotsData = data;
-                    totalHotspots = data.features.length; // Number of merged clusters
-
-                    // Sum up all images across clusters
-                    totalImages = data.features.reduce((sum, feature) => {
-                        return sum + (feature.properties.hotspot_image_count || 0);
-                    }, 0);
+                    totalImages = data.features.length;
 
                     // Update info panel
                     document.getElementById('total-images').textContent = totalImages;
-                    document.getElementById('total-hotspots').textContent = totalHotspots;
+                    document.getElementById('total-hotspots').textContent = 'N/A';
 
-                    console.log(`> LOADED ${totalHotspots} CLUSTERS WITH ${totalImages} IMAGES`);
-                    console.log('> EACH CLUSTER = MERGED INTERSECTING IMAGES');
+                    console.log(`> LOADED ${totalImages} RAW SATELLITE IMAGES`);
+                    console.log('> SHOWING INDIVIDUAL IMAGES WITHOUT CLUSTERING');
 
                     // Add data to map
                     addDataToMap(data);
@@ -194,61 +189,57 @@
                 data: data
             });
 
-            // Add fill layer for merged clusters
+            // Add fill layer for individual images
             map.addLayer({
                 id: 'satellite-footprints',
                 type: 'fill',
                 source: 'satellite-images',
                 paint: {
-                    'fill-color': [
-                        'interpolate',
-                        ['linear'],
-                        ['get', 'hotspot_image_count'],
-                        5, '#ffe6e6',   // Light red for small clusters
-                        10, '#ff9999', // Medium red for medium clusters
-                        15, '#ff6b6b', // Default red for larger clusters
-                        25, '#ff3333'  // Dark red for large clusters
-                    ],
-                    'fill-opacity': 0.6,
+                    'fill-color': '#ff4444',
+                    'fill-opacity': 0.4,
                     'fill-outline-color': '#ffffff'
                 }
             });
 
-            // Add outline layer for merged clusters
+            // Add outline layer for individual images
             map.addLayer({
                 id: 'satellite-outlines',
                 type: 'line',
                 source: 'satellite-images',
                 paint: {
                     'line-color': '#ffffff',
-                    'line-width': 2,
-                    'line-opacity': 1.0
+                    'line-width': 1,
+                    'line-opacity': 0.8
                 }
             });
 
-            // Add cluster size labels
-            map.addLayer({
-                id: 'cluster-labels',
-                type: 'symbol',
-                source: 'satellite-images',
-                layout: {
-                    'text-field': ['get', 'hotspot_image_count'],
-                    'text-size': 12,
-                    'text-anchor': 'center',
-                    'text-justify': 'center'
-                },
-                paint: {
-                    'text-color': '#ffffff',
-                    'text-halo-color': '#000000',
-                    'text-halo-width': 2
-                }
+            // Add popups for individual images
+            map.on('click', 'satellite-footprints', (e) => {
+                const feature = e.features[0];
+                const props = feature.properties;
+
+                new mapboxgl.Popup()
+                    .setLngLat(e.lngLat)
+                    .setHTML(`
+                        <h4>🛰️ Satellite Image</h4>
+                        <p><strong>Image ID:</strong> ${props.id}</p>
+                        <p><strong>Constellation:</strong> ${props.constellation}</p>
+                        <p><strong>Collection:</strong> ${props.collection}</p>
+                        <p><strong>Resolution:</strong> ${props.resolution}m</p>
+                        <p><strong>Cloud Cover:</strong> ${props.cloudCoverage ? props.cloudCoverage.toFixed(1) + '%' : 'N/A'}</p>
+                        <p><strong>Date:</strong> ${new Date(props.datetime).toLocaleDateString()}</p>
+                        <p><strong>Provider:</strong> ${props.providerName}</p>
+                    `)
+                    .addTo(map);
             });
 
-
-
-
-
-
+            // Change cursor on hover
+            map.on('mouseenter', 'satellite-footprints', () => {
+                map.getCanvas().style.cursor = 'pointer';
+            });
+            map.on('mouseleave', 'satellite-footprints', () => {
+                map.getCanvas().style.cursor = '';
+            });
 
             // Fit bounds to show all data
             const bounds = new mapboxgl.LngLatBounds();
@@ -268,7 +259,7 @@
                 if (boundsArray && boundsArray.length === 2 &&
                     boundsArray[0].length === 2 && boundsArray[1].length === 2) {
                     map.fitBounds(bounds, { padding: 20 });
-                    console.log('> MAP BOUNDS FITTED TO CLUSTERS');
+                    console.log('> MAP BOUNDS FITTED TO IMAGES');
                 } else {
                     console.log('> NO VALID BOUNDS, USING DEFAULT VIEW');
                 }
