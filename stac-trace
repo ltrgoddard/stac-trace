@@ -17,4 +17,4 @@ echo
 make HOST="$HOST" DAYS="$DAYS" BBOX="$BBOX" all
 
 echo
-echo "✅ Analysis complete! Check hotspots.geojson for results"
+echo "✅ Analysis complete! Check data/hotspots.geojson for results"

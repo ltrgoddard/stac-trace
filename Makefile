@@ -10,11 +10,16 @@ BBOX ?=
 TOP_N ?= 10
 
 # File targets
-DATA_FILE = stac_data_$(shell date +%Y%m%d_%H%M%S).json
-OUTPUT_FILE = hotspots.geojson
+DATA_DIR = data
+DATA_FILE = $(DATA_DIR)/stac_data_$(shell date +%Y%m%d_%H%M%S).json
+OUTPUT_FILE = $(DATA_DIR)/hotspots.geojson
 
 # Default target
-all: $(OUTPUT_FILE)
+all: $(DATA_DIR) $(OUTPUT_FILE)
+
+# Create data directory
+$(DATA_DIR):
+	@mkdir -p $@
 
 # Make scripts executable
 fetch.sh cluster.sql:
@@ -49,7 +54,8 @@ test: $(DATA_FILE)
 # Clean up generated files
 clean:
 	@echo "🧹 Cleaning up..."
-	rm -f stac_data_*.json hotspots.geojson
+	rm -rf $(DATA_DIR)/*
+	@mkdir -p $(DATA_DIR)
 
 # Show help
 help:

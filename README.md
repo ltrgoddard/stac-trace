@@ -49,6 +49,13 @@ Get credentials at [UP42](https://up42.com) - free tier available.
 
 The tool uses DuckDB for spatial processing and curl for API requests. No Python runtime required.
 
+### Data Organization
+
+All generated data files are stored in the `data/` directory to keep the main repository clean:
+- `data/stac_data_*.json` - Raw STAC data from API
+- `data/hotspots.geojson` - Processed hotspot results
+- Use `make clean` to remove all generated files
+
 ## Usage
 
 ### Find Surveillance Hotspots
@@ -66,7 +73,7 @@ The key feature - discovers locations with unusual surveillance activity:
 make HOST=maxar DAYS=30 all
 ```
 
-Example output generates `hotspots.geojson` with clustered surveillance locations.
+Example output generates `data/hotspots.geojson` with clustered surveillance locations.
 
 ### Manual Pipeline Control
 
@@ -77,10 +84,10 @@ For more control over the analysis:
 make HOST=capella DAYS=30 BBOX='-122.5,37.5,-122.0,38.0'
 
 # Just fetch data without processing
-make stac_data_$(date +%Y%m%d_%H%M%S).json
+make data/stac_data_$(date +%Y%m%d_%H%M%S).json
 
 # Process existing data
-make hotspots.geojson
+make data/hotspots.geojson
 ```
 
 ## How the DuckDB Pipeline Works
