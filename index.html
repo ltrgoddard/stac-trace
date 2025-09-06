@@ -96,18 +96,7 @@
         </div>
     </div>
     </div>
-    <div class="legend">
-        <h4>MERGED HOTSPOTS</h4>
-        <div>
-            <div>▇ 5-9 IMAGES</div>
-            <div>▇ 10-14 IMAGES</div>
-            <div>▇ 15+ IMAGES</div>
-        </div>
-        <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #00ff00; font-size: 10px;">
-            3D GLOBE VIEW<br>
-            NUMBERS = IMAGE COUNT
-        </div>
-    </div>
+
 
     <script>
         // Set Mapbox access token
@@ -259,32 +248,9 @@
 
 
 
-            // Add popups
-            map.on('click', 'satellite-footprints', (e) => {
-                const feature = e.features[0];
-                const props = feature.properties;
 
-                new mapboxgl.Popup()
-                    .setLngLat(e.lngLat)
-                    .setHTML(`
-                        <h4>🎯 Merged Satellite Cluster</h4>
-                        <p><strong>Cluster ID:</strong> ${props.hotspot_id}</p>
-                        <p><strong>Merged Images:</strong> ${props.hotspot_image_count}</p>
-                        <p><strong>Centroid:</strong> ${props.hotspot_centroid_lat.toFixed(2)}°, ${props.hotspot_centroid_lon.toFixed(2)}°</p>
-                        <p><strong>Primary Collection:</strong> ${props.primary_collection || 'Mixed'}</p>
-                        <p><strong>Latest Image:</strong> ${props.latest_datetime ? new Date(props.latest_datetime).toLocaleDateString() : 'N/A'}</p>
-                        <p><strong>Image IDs:</strong> ${props.image_ids ? props.image_ids.length + ' total' : 'N/A'}</p>
-                    `)
-                    .addTo(map);
-            });
 
-            // Change cursor on hover
-            map.on('mouseenter', 'satellite-footprints', () => {
-                map.getCanvas().style.cursor = 'pointer';
-            });
-            map.on('mouseleave', 'satellite-footprints', () => {
-                map.getCanvas().style.cursor = '';
-            });
+
 
             // Fit bounds to show all data
             const bounds = new mapboxgl.LngLatBounds();
