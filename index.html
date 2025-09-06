@@ -235,16 +235,27 @@
                 const feature = e.features[0];
                 const props = feature.properties;
 
-                document.getElementById('image-info').innerHTML = `
+                const imageInfoEl = document.getElementById('image-info');
+                console.log('Element found:', !!imageInfoEl);
+                console.log('Current content:', imageInfoEl?.innerHTML);
+
+                const newContent = `
                     <strong>${props.constellation?.toUpperCase()}</strong><br>
                     ${new Date(props.datetime).toLocaleString()}<br>
                     ${props.resolution}m resolution
                 `;
+                console.log('New content:', newContent);
+
+                imageInfoEl.innerHTML = newContent;
+                console.log('After update:', imageInfoEl.innerHTML);
             });
 
             map.on('mouseleave', 'satellite-footprints', () => {
                 console.log('Hover left');
-                document.getElementById('image-info').innerHTML = 'HOVER OVER IMAGES FOR DETAILS';
+                const imageInfoEl = document.getElementById('image-info');
+                console.log('Resetting content');
+                imageInfoEl.innerHTML = 'HOVER OVER IMAGES FOR DETAILS';
+                console.log('After reset:', imageInfoEl.innerHTML);
             });
 
             // Change cursor on hover
