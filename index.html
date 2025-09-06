@@ -122,7 +122,22 @@
                 center: [0, 20], // Center on equator
                 zoom: 1.5,
                 maxZoom: 18,
-                projection: 'globe' // Globe projection
+                projection: 'globe', // Globe projection
+                // Disable all map controls for clean interface
+                attributionControl: false,
+                interactive: true, // Keep interactivity for popups
+                pitchWithRotate: false,
+                dragRotate: false,
+                touchZoomRotate: false
+            });
+
+            // Remove any default controls that might be added
+            map.on('load', () => {
+                // Remove navigation control if it exists
+                const navControl = map._controls.find(control => control instanceof mapboxgl.NavigationControl);
+                if (navControl) {
+                    map.removeControl(navControl);
+                }
             });
 
             console.log('> STAC TRACE - GLOBE PROJECTION INITIALIZED');
@@ -289,12 +304,12 @@
                 if (boundsArray && boundsArray.length === 2 &&
                     boundsArray[0].length === 2 && boundsArray[1].length === 2) {
                     map.fitBounds(bounds, { padding: 20 });
-                    console.log('📍 Map bounds fitted to merged clusters');
+                    console.log('> MAP BOUNDS FITTED TO CLUSTERS');
                 } else {
-                    console.log('⚠️ No valid bounds found, using default view');
+                    console.log('> NO VALID BOUNDS, USING DEFAULT VIEW');
                 }
             } catch (error) {
-                console.log('⚠️ Could not fit bounds, using default view:', error.message);
+                console.log('> COULD NOT FIT BOUNDS:', error.message);
             }
         }
 
