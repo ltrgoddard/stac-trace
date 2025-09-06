@@ -162,8 +162,19 @@
             fetch('data/stac_data_20250906_204819.json')
                 .then(response => response.json())
                 .then(data => {
-                    hotspotsData = data;
-                    totalImages = data.features.length;
+                    // Filter for high-resolution satellites only (<=75cm and not SPOT)
+                    const filteredData = {
+                        type: "FeatureCollection",
+                        features: data.features.filter(feature => {
+                            const props = feature.properties;
+                            const constellation = props.constellation?.toLowerCase();
+                            const resolution = props.resolution;
+                            return constellation !== 'spot' && resolution <= 0.75;
+                        })
+                    };
+
+                    hotspotsData = filteredData;
+                    totalImages = filteredData.features.length;
 
                     // Update info panel
                     document.getElementById('total-images').textContent = totalImages;
@@ -172,7 +183,7 @@
                     console.log('> SHOWING INDIVIDUAL IMAGES WITHOUT CLUSTERING');
 
                     // Add data to map
-                    addDataToMap(data);
+                    addDataToMap(filteredData);
                 })
                 .catch(error => {
                     console.error('> ERROR LOADING DATA:', error);
@@ -220,8 +231,9 @@
                     .setLngLat(e.lngLat)
                     .setHTML(`
                         <div style="font-family: monospace; font-size: 11px;">
-                            <strong>${props.constellation}</strong><br>
-                            ${new Date(props.datetime).toLocaleDateString()}
+                            <strong>${props.constellation?.toUpperCase()}</strong><br>
+                            ${new Date(props.datetime).toLocaleDateString()}<br>
+                            ${props.resolution}m resolution
                         </div>
                     `)
                     .addTo(map);
