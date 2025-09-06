@@ -4,8 +4,9 @@ Minimal tool for exploring [STAC catalogues](https://stacspec.org/en). Ultimate 
 
 ## System Architecture
 
-- Single Python file `stac_trace.py` with all functionality
-- Shell wrapper `stac-trace` for execution via `uv run`
+- Shell scripts (`fetch.sh`, `stac-trace`) for data fetching and orchestration
+- DuckDB SQL (`cluster.sql`) for spatial processing and hotspot detection
+- Makefile for pipeline orchestration
 - Uses UP42 [API docs](https://developer.up42.com/reference/overview) for STAC queries
 - UP42 credentials in `.env` (OAuth authentication, not project API keys)
 
@@ -18,13 +19,13 @@ Minimal tool for exploring [STAC catalogues](https://stacspec.org/en). Ultimate 
 - Credentials from environment variables: `UP42_USERNAME` and `UP42_PASSWORD`
 
 ### API Limitations & Solutions
-- **500-item limit per request**: Implemented automatic time-slicing in `search_catalog_deep()`
+- **500-item limit per request**: Implemented automatic time-slicing in `fetch.sh`
 - **Rate limiting**: Exponential backoff for geocoding requests
 - **Collections endpoint**: Use `/collections` not `/catalog/collections`
 
 ### Satellite Filtering
 - Filters to high-resolution (≤0.75m) satellites to exclude wide-area coverage (SPOT, Sentinel, etc.)
-- `get_taskable_collections()` returns only satellites that can be specifically tasked
+- Taskable collections filtered in DuckDB SQL queries
 - This focuses on actual surveillance activity, not routine Earth observation
 
 ### Hotspot Detection Algorithm
@@ -50,7 +51,7 @@ Minimal tool for exploring [STAC catalogues](https://stacspec.org/en). Ultimate 
 - **Collection names**: Check both `constellation` and `collection` properties
 - **Geocoding**: Use `geometryCentroid` from provider properties, fallback to bbox center
 - **Error handling**: Always check response status codes and handle gracefully
-- **Terminal output**: Use Rich library for formatted tables and colored output
+- **Terminal output**: Simple shell output with emojis for clarity
 
 ## Common Issues & Solutions
 

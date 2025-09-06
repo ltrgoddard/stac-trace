@@ -36,3 +36,8 @@ htmlcov/
 dist/
 build/
 *.egg-info/
+
+# Generated data files
+stac_data_*.json
+hotspots*.geojson
+hotspots*.json

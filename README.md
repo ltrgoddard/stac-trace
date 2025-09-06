@@ -19,15 +19,17 @@ A command-line tool for exploring STAC (SpatioTemporal Asset Catalog) catalogues
 
 ## Installation
 
-Requires Python 3.8+ and uses `uv` for dependency management:
+Requires DuckDB and curl. No Python dependencies needed for the minimal version:
 
 ```bash
 # Clone the repository
 git clone https://github.com/yourusername/stac-trace.git
 cd stac-trace
 
-# Install dependencies with uv
-uv sync
+# Install DuckDB (if not already installed)
+# macOS: brew install duckdb
+# Linux: See https://duckdb.org/docs/installation/
+# Windows: See https://duckdb.org/docs/installation/
 
 # Set up credentials in .env file
 cp .env.example .env
@@ -45,28 +47,9 @@ UP42_PASSWORD=your_password_here
 
 Get credentials at [UP42](https://up42.com) - free tier available.
 
+The tool uses DuckDB for spatial processing and curl for API requests. No Python runtime required.
+
 ## Usage
-
-### List Available Satellite Collections
-
-```bash
-./stac-trace collections
-```
-
-Shows all available satellite collections with resolution and provider info.
-
-### Search for Recent Imagery
-
-```bash
-# Search a specific area (NYC) for the last 30 days
-./stac-trace search --bbox "-74.1,40.7,-73.9,40.8" --days 30
-
-# Search with cloud coverage filter
-./stac-trace search --bbox "-74.1,40.7,-73.9,40.8" --cloud 20
-
-# Search different providers
-./stac-trace search --host maxar --bbox "-77.1,38.85,-77,38.95" --days 7
-```
 
 ### Find Surveillance Hotspots
 
@@ -74,53 +57,41 @@ The key feature - discovers locations with unusual surveillance activity:
 
 ```bash
 # Find global hotspots from the last week
-./stac-trace hotspots --days 7
+./stac-trace 7
 
-# Analyze specific region (Middle East)
-./stac-trace hotspots --bbox "30,-10,60,40" --days 14
+# Analyze specific region (Middle East) for 14 days
+./stac-trace 14 oneatlas "30,-10,60,40"
 
 # Check different satellite providers
-./stac-trace hotspots --host maxar --days 30
+make HOST=maxar DAYS=30 all
 ```
 
-Example output:
-```
-Top Hotspots:
-• Rostov Oblast, Russia (47.0, 39.0): 29 images
-• Makiivka Municipality, Ukraine (48.0, 38.0): 19 images
-• Zaporizhia Oblast, Ukraine (47.0, 37.0): 18 images
-```
+Example output generates `hotspots.geojson` with clustered surveillance locations.
 
-### Watch a Specific Location
+### Manual Pipeline Control
 
-Track what's been watching a particular place:
+For more control over the analysis:
 
 ```bash
-# Check surveillance of Manhattan
-./stac-trace watch --lat 40.7128 --lon -74.0060 --days 30
-```
-
-### DuckDB Pipeline (Minimal)
-
-For ultra-minimal hotspots analysis with spatial processing:
-
-```bash
-# Run the complete pipeline
-make
-
-# Or manually:
-./fetch.sh 7 | duckdb -json < cluster.sql > hotspots.geojson
-
-# Custom parameters
+# Custom parameters with Make
 make HOST=capella DAYS=30 BBOX='-122.5,37.5,-122.0,38.0'
+
+# Just fetch data without processing
+make stac_data_$(date +%Y%m%d_%H%M%S).json
+
+# Process existing data
+make hotspots.geojson
 ```
 
-The DuckDB pipeline:
-1. **fetch.sh** - Downloads STAC data from UP42 API (with automatic time-slicing)
-2. **cluster.sql** - Processes with DuckDB spatial extension
-3. **Output** - Nested GeoJSON FeatureCollections
+## How the DuckDB Pipeline Works
 
-Features:
+The tool uses a minimal, efficient pipeline with DuckDB spatial processing:
+
+1. **fetch.sh** - Downloads STAC data from UP42 API (with automatic time-slicing to bypass 500-item limits)
+2. **cluster.sql** - Processes data with DuckDB spatial extension for hotspot detection
+3. **Output** - GeoJSON FeatureCollection with clustered surveillance hotspots
+
+### Pipeline Features
 - ⚡ **Fast processing** - DuckDB columnar engine
 - 🗺️ **Native spatial** - Built-in geospatial functions
 - 📦 **Minimal deps** - Just DuckDB and curl
@@ -128,40 +99,57 @@ Features:
 - 🚀 **No API limits** - Automatic time-slicing bypasses 500-item limit
 - 📊 **Scalable** - Handles thousands of images efficiently
 
-# Monitor with larger radius
-./stac-trace watch --lat 50.45 --lon 30.52 --radius 0.5 --days 14
+### Manual Usage
+
+```bash
+# Run the complete pipeline
+make
+
+# Custom parameters
+make HOST=capella DAYS=30 BBOX='-122.5,37.5,-122.0,38.0'
+
+# Just fetch data
+./fetch.sh 7 oneatlas > stac_data.json
+
+# Process with DuckDB
+sed "s|DATA_FILE_PLACEHOLDER|stac_data.json|g" cluster.sql | duckdb -json
+```
 ```
 
-## Command Reference
+## Usage
 
-### `collections`
-List available satellite collections with metadata.
-- Default: Shows only high-resolution taskable satellites (≤0.75m)
-- `--all`: Show all available collections including wide-area satellites
+### Simple Usage
+```bash
+# Find hotspots from last 7 days globally
+./stac-trace
 
-### `search`
-Search for satellite imagery with filters:
-- `--host`: Provider to search (oneatlas, maxar, capellaspace, etc.)
-- `--bbox`: Bounding box as "min_lon,min_lat,max_lon,max_lat"
-- `--days`: Number of days to look back
-- `--collection`: Specific collection to search
-- `--cloud`: Maximum cloud coverage percentage
-- `--limit`: Maximum results to return
-- `--format`: Output format (table or json)
+# Custom time period
+./stac-trace 30
 
-### `hotspots`
-Find locations with high surveillance activity:
-- `--host`: Provider to analyze
-- `--days`: Number of days to analyze (automatically handles API limits)
-- `--bbox`: Limit analysis to geographic region
+# Specific provider and region
+./stac-trace 14 maxar "30,20,50,40"
+```
 
-### `watch`
-Check surveillance history of a specific location:
-- `--lat`: Latitude of location
-- `--lon`: Longitude of location  
-- `--host`: Provider to check
-- `--radius`: Search radius in degrees (default 0.1°)
-- `--days`: Historical period to check
+### Advanced Usage with Make
+```bash
+# Full control with Make variables
+make HOST=capella DAYS=30 BBOX='-122.5,37.5,-122.0,38.0'
+
+# Install dependencies
+make install
+
+# Test pipeline
+make test
+
+# Clean generated files
+make clean
+```
+
+### Make Variables
+- `HOST`: STAC host (default: oneatlas)
+- `DAYS`: Days to look back (default: 7)
+- `BBOX`: Bounding box as "min_lon,min_lat,max_lon,max_lat"
+- `TOP_N`: Number of top hotspots (default: 10)
 
 ## How It Works
 
@@ -202,11 +190,11 @@ Check surveillance history of a specific location:
 
 ## Technical Details
 
-- **Language**: Python 3.8+
-- **Dependencies**: requests, click, pystac-client, rich, python-dotenv
+- **Language**: Shell scripts + SQL
+- **Dependencies**: DuckDB, curl, jq
 - **API**: UP42 STAC-compliant catalog API
-- **Geocoding**: OpenStreetMap Nominatim (no API key needed)
-- **Rate Limiting**: Automatic handling with exponential backoff
+- **Processing**: DuckDB spatial extension for geospatial analysis
+- **Output**: GeoJSON FeatureCollection with hotspot clusters
 
 ## Privacy & Ethics
 

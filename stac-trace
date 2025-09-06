@@ -1,2 +1,20 @@
 #!/usr/bin/env bash
-uv run python stac_trace.py "$@"
+# STAC Trace - DuckDB Pipeline Version
+# Usage: ./stac-trace [days] [host] [bbox]
+
+set -euo pipefail
+
+# Default values
+DAYS="${1:-7}"
+HOST="${2:-oneatlas}"
+BBOX="${3:-}"
+
+echo "🛰️ STAC Trace - Finding surveillance hotspots"
+echo "📅 Days: $DAYS, Host: $HOST, BBox: ${BBOX:-'Global'}"
+echo
+
+# Run the DuckDB pipeline
+make HOST="$HOST" DAYS="$DAYS" BBOX="$BBOX" all
+
+echo
+echo "✅ Analysis complete! Check hotspots.geojson for results"
