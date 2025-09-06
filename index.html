@@ -87,7 +87,7 @@
         <h3>STAC HOTSPOTS</h3>
         <p><strong>ENGINE:</strong> MAPBOX GL JS</p>
         <p><strong>PROJECTION:</strong> GLOBE</p>
-        <p><strong>DATA:</strong> RAW STAC</p>
+        <p><strong>DATA:</strong> HIGH-RES STAC (≤75cm)</p>
         <p><strong>IMAGES:</strong> <span id="total-images">0</span></p>
         <p><strong>RANGE:</strong> LAST 7 DAYS</p>
 
@@ -159,7 +159,7 @@
             console.log('> LOADING SATELLITE DATA...');
 
             // Load raw STAC data
-            fetch('data/stac_data_20250906_204359.json')
+            fetch('data/stac_data_20250906_204819.json')
                 .then(response => response.json())
                 .then(data => {
                     hotspotsData = data;
