@@ -127,7 +127,7 @@
             console.log('🗺️ Map loaded, adding satellite data...');
 
             // Load GeoJSON data
-            fetch('hotspots.geojson')
+            fetch('data/hotspots.geojson')
                 .then(response => response.json())
                 .then(data => {
                     hotspotsData = data;
