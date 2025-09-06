@@ -1,15 +1,20 @@
 # To do
 
-✅ ~~Use OpenStreetMap's Overpass API to grab details of significant infrastructure and buildings within each hotspot (using the actual image boundaries), surfacing these along with the hotspot results.~~ DONE
+## Current Status
+✅ **Minimal DuckDB Pipeline**: Core functionality working with shell scripts + DuckDB
+✅ **STAC Data Fetching**: Automated time-slicing bypasses 500-item API limits
+✅ **Spatial Clustering**: Intersection-based hotspot detection with GeoJSON output
+✅ **Make-based Orchestration**: Clean, configurable pipeline with proper file targets
 
-## Completed enhancements
-- Added intelligent significance scoring to prioritize major infrastructure
-- Expanded query to include commercial activity, data centers, universities, hospitals, etc.
-- Implemented smart filtering to show only the most significant 3-5 items per category
-- Made infrastructure queries optional with `--no-infrastructure` flag (due to Overpass API timeouts)
-- Organized results into strategic categories: Strategic, Airports, Power, Transport, Technology, etc.
+## Future Enhancements
+- Add infrastructure analysis using Overpass API (similar to Python version)
+- Implement reverse geocoding for human-readable location names
+- Add visualization improvements to the map.html
+- Support for additional STAC providers beyond UP42
+- Performance optimizations for larger datasets
 
-## Alternative APIs for future consideration
-- Google Places API - Detailed business data (requires API key)
-- Foursquare Places API - Venue/business data (free tier available)
-- MapBox Geocoding API - Points of interest (requires token)
+## Architecture Notes
+- Current implementation is minimal and focused on core hotspot detection
+- No Python dependencies - just DuckDB, curl, and shell scripts
+- GeoJSON output compatible with mapping tools
+- Makefile provides clean interface for customization
