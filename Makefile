@@ -11,7 +11,7 @@ TOP_N ?= 10
 
 # File targets
 DATA_DIR = data
-DATA_FILE = $(DATA_DIR)/stac_data_$(shell date +%Y%m%d_%H%M%S).json
+DATA_FILE = $(DATA_DIR)/stac_data.json
 OUTPUT_FILE = $(DATA_DIR)/hotspots.geojson
 
 # Default target

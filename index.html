@@ -79,6 +79,18 @@
             margin-right: 6px;
             border: 1px solid #ffffff;
         }
+
+        /* Dark tooltip styling */
+        .dark-tooltip .mapboxgl-popup-content {
+            background: #333333;
+            color: #00ff00;
+            border: 1px solid #00ff00;
+            font-family: 'Courier New', monospace;
+        }
+
+        .dark-tooltip .mapboxgl-popup-tip {
+            border-top-color: #333333;
+        }
     </style>
 </head>
 <body>
@@ -159,7 +171,7 @@
             console.log('> LOADING SATELLITE DATA...');
 
             // Load raw STAC data
-            fetch('data/stac_data_20250906_205131.json')
+            fetch('data/stac_data.json')
                 .then(response => response.json())
                 .then(data => {
                     // Filter for high-resolution satellites only (<=75cm and not SPOT)
@@ -227,7 +239,9 @@
                 const feature = e.features[0];
                 const props = feature.properties;
 
-                new mapboxgl.Popup()
+                new mapboxgl.Popup({
+                    className: 'dark-tooltip'
+                })
                     .setLngLat(e.lngLat)
                     .setHTML(`
                         <div style="font-family: monospace; font-size: 11px;">
