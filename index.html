@@ -95,7 +95,7 @@
     <div class="info-panel">
         <h3>STAC TRACE</h3>
         <p><strong>IMAGES:</strong> <span id="total-images">0</span></p>
-        <div id="image-info"></div>
+        <div id="image-info"><!-- Satellite info appears here on hover --></div>
             HOVER OVER IMAGES FOR DETAILS
         </div>
     </div>
@@ -231,31 +231,18 @@
 
             // Update info panel on hover
             map.on('mouseenter', 'satellite-footprints', (e) => {
-                console.log('Hover entered:', e.features[0].properties.constellation);
                 const feature = e.features[0];
                 const props = feature.properties;
 
-                const imageInfoEl = document.getElementById('image-info');
-                console.log('Element found:', !!imageInfoEl);
-                console.log('Current content:', imageInfoEl?.innerHTML);
-
-                const newContent = `
+                document.getElementById('image-info').innerHTML = `
                     <strong>${props.constellation?.toUpperCase()}</strong><br>
                     ${new Date(props.datetime).toLocaleString()}<br>
                     ${props.resolution}m resolution
                 `;
-                console.log('New content:', newContent);
-
-                imageInfoEl.innerHTML = newContent;
-                console.log('After update:', imageInfoEl.innerHTML);
             });
 
             map.on('mouseleave', 'satellite-footprints', () => {
-                console.log('Hover left');
-                const imageInfoEl = document.getElementById('image-info');
-                console.log('Resetting content');
-                imageInfoEl.innerHTML = 'HOVER OVER IMAGES FOR DETAILS';
-                console.log('After reset:', imageInfoEl.innerHTML);
+                document.getElementById('image-info').innerHTML = '';
             });
 
             // Change cursor on hover
