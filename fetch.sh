@@ -58,16 +58,60 @@ if [[ $TOTAL_HOURS -gt 24 ]]; then
             echo "  Fetching $CURRENT_DATE to $CHUNK_END..." >&2
 
             # Build search payload for this chunk
-            PAYLOAD="{\"datetime\":\"$CURRENT_DATE/$CHUNK_END\",\"limit\":500}"
+            PAYLOAD="{\"datetime\":\"$CURRENT_DATE/$CHUNK_END\",\"limit\":500,\"query\":{\"resolution\":{\"lte\":0.75}}}"
             if [[ -n "$BBOX" ]]; then
               PAYLOAD="${PAYLOAD%,*}","bbox\":[$BBOX]}"
             fi
 
-            # Fetch chunk
-            curl -s -H "Authorization: Bearer $TOKEN" \
-              -H "Content-Type: application/json" \
-              "https://api.up42.com/catalog/hosts/$HOST/stac/search" \
-              -d "$PAYLOAD"
+            # Fetch all pages for this chunk
+            ALL_FEATURES=""
+            NEXT_PAYLOAD="$PAYLOAD"
+
+            while true; do
+                echo "    Fetching page..." >&2
+
+                # Make the API call
+                RESPONSE=$(curl -s -H "Authorization: Bearer $TOKEN" \
+                  -H "Content-Type: application/json" \
+                  "https://api.up42.com/catalog/hosts/$HOST/stac/search" \
+                  -d "$NEXT_PAYLOAD")
+
+                # Extract features from this page
+                PAGE_FEATURES=$(echo "$RESPONSE" | jq -r '.features // [] | @json')
+                if [[ "$PAGE_FEATURES" != "[]" && "$PAGE_FEATURES" != "null" ]]; then
+                    if [[ -z "$ALL_FEATURES" ]]; then
+                        ALL_FEATURES="$PAGE_FEATURES"
+                    else
+                        # Merge features from this page
+                        ALL_FEATURES=$(echo "[$ALL_FEATURES,$PAGE_FEATURES]" | jq -s 'flatten')
+                    fi
+                fi
+
+                # Check if there are more pages
+                NEXT_URL=$(echo "$RESPONSE" | jq -r '.links[]? | select(.rel == "next") | .href // empty')
+                if [[ -z "$NEXT_URL" ]]; then
+                    break
+                fi
+
+                # For next page, we need to construct the payload differently
+                # UP42 uses token-based pagination
+                NEXT_TOKEN=$(echo "$RESPONSE" | jq -r '.links[]? | select(.rel == "next") | .href | capture("token=(?<token>[^&]+)") | .token // empty')
+                if [[ -n "$NEXT_TOKEN" ]]; then
+                    NEXT_PAYLOAD=$(echo "$PAYLOAD" | jq ". + {\"token\": \"$NEXT_TOKEN\"}")
+                else
+                    break
+                fi
+
+                # Don't overwhelm the API
+                sleep 0.5
+            done
+
+            # Output features for this chunk
+            if [[ -n "$ALL_FEATURES" ]]; then
+                echo "{\"features\": $ALL_FEATURES}"
+            else
+                echo "{\"features\": []}"
+            fi
 
             CURRENT_DATE="$CHUNK_END"
 
@@ -80,13 +124,22 @@ if [[ $TOTAL_HOURS -gt 24 ]]; then
     }'
 else
     # Single request for small ranges
-    PAYLOAD="{\"datetime\":\"$START_DATE/$END_DATE\",\"limit\":500}"
+    PAYLOAD="{\"datetime\":\"$START_DATE/$END_DATE\",\"limit\":500,\"query\":{\"resolution\":{\"lte\":0.75}}}"
     if [[ -n "$BBOX" ]]; then
       PAYLOAD="${PAYLOAD%,*}","bbox\":[$BBOX]}"
     fi
 
-    curl -s -H "Authorization: Bearer $TOKEN" \
+    # For single requests, still check for pagination (though unlikely for small ranges)
+    RESPONSE=$(curl -s -H "Authorization: Bearer $TOKEN" \
       -H "Content-Type: application/json" \
       "https://api.up42.com/catalog/hosts/$HOST/stac/search" \
-      -d "$PAYLOAD"
+      -d "$PAYLOAD")
+
+    # Check if there are more pages
+    NEXT_URL=$(echo "$RESPONSE" | jq -r '.links[]? | select(.rel == "next") | .href // empty')
+    if [[ -n "$NEXT_URL" ]]; then
+        echo "Warning: More than 500 results available, but pagination not fully implemented for single requests" >&2
+    fi
+
+    echo "$RESPONSE"
 fi
