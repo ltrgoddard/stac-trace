@@ -58,7 +58,7 @@ if [[ $TOTAL_HOURS -gt 24 ]]; then
             echo "  Fetching $CURRENT_DATE to $CHUNK_END..." >&2
 
             # Build search payload for this chunk
-            PAYLOAD="{\"datetime\":\"$CURRENT_DATE/$CHUNK_END\",\"limit\":500,\"query\":{\"resolution\":{\"lte\":0.75}}}"
+            PAYLOAD="{\"datetime\":\"$CURRENT_DATE/$CHUNK_END\",\"limit\":500}"
             if [[ -n "$BBOX" ]]; then
               PAYLOAD="${PAYLOAD%,*}","bbox\":[$BBOX]}"
             fi
@@ -76,8 +76,11 @@ if [[ $TOTAL_HOURS -gt 24 ]]; then
                   "https://api.up42.com/catalog/hosts/$HOST/stac/search" \
                   -d "$NEXT_PAYLOAD")
 
-                # Extract features from this page
-                PAGE_FEATURES=$(echo "$RESPONSE" | jq -r '.features // [] | @json')
+                # Extract and filter features from this page
+                PAGE_FEATURES=$(echo "$RESPONSE" | jq -r '.features // [] | map(select(
+                    (.properties.constellation | ascii_downcase) != "spot" and
+                    (.properties.resolution | tonumber) <= 0.75
+                )) | @json')
                 if [[ "$PAGE_FEATURES" != "[]" && "$PAGE_FEATURES" != "null" ]]; then
                     if [[ -z "$ALL_FEATURES" ]]; then
                         ALL_FEATURES="$PAGE_FEATURES"
@@ -124,7 +127,7 @@ if [[ $TOTAL_HOURS -gt 24 ]]; then
     }'
 else
     # Single request for small ranges
-    PAYLOAD="{\"datetime\":\"$START_DATE/$END_DATE\",\"limit\":500,\"query\":{\"resolution\":{\"lte\":0.75}}}"
+    PAYLOAD="{\"datetime\":\"$START_DATE/$END_DATE\",\"limit\":500}"
     if [[ -n "$BBOX" ]]; then
       PAYLOAD="${PAYLOAD%,*}","bbox\":[$BBOX]}"
     fi
@@ -141,5 +144,12 @@ else
         echo "Warning: More than 500 results available, but pagination not fully implemented for single requests" >&2
     fi
 
-    echo "$RESPONSE"
+    # Apply client-side filtering
+    echo "$RESPONSE" | jq '{
+        type: "FeatureCollection",
+        features: .features | map(select(
+            (.properties.constellation | ascii_downcase) != "spot" and
+            (.properties.resolution | tonumber) <= 0.75
+        ))
+    }'
 fi
