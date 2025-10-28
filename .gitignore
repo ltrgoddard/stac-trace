@@ -39,3 +39,6 @@ build/
 
 # Generated data files
 data/
+*.geojson
+stac_data_*.json
+hotspots_*.geojson
