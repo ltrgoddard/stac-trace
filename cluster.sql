@@ -46,7 +46,9 @@ SELECT
   lat,
   lon,
   centroid
-FROM items_with_coords;
+FROM items_with_coords
+WHERE (properties->>'constellation')::VARCHAR NOT IN ('spot')
+  AND (properties->>'resolution')::FLOAT <= 0.75;
 
 -- Find all pairs of intersecting images
 CREATE TABLE intersections AS
