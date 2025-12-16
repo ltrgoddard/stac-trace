@@ -1,90 +1,116 @@
-# STAC Hotspots Analysis Pipeline
-# Uses DuckDB spatial extension for minimal, efficient processing
+# STAC-Trace: Persistent Satellite Imagery Hotspot Analysis
+# Uses DuckDB for incremental data collection over time
 
-.PHONY: all clean help install test
+.PHONY: all init sync analyze status clean help geocode
 
 # Configuration
 HOST ?= oneatlas
 DAYS ?= 7
-BBOX ?=
-TOP_N ?= 10
+ANALYZE_DAYS ?=
+GEOCODE ?= 0
 
-# File targets
+# Paths
 DATA_DIR = data
-DATA_FILE = $(DATA_DIR)/stac_data.json
+DB_PATH = $(DATA_DIR)/stac.duckdb
 OUTPUT_FILE = $(DATA_DIR)/hotspots.geojson
 
-# Default target
-all: $(DATA_DIR) $(OUTPUT_FILE)
+# Default: sync new data and analyze
+all: sync analyze
+ifeq ($(GEOCODE),1)
+	@$(MAKE) geocode
+endif
 
 # Create data directory
 $(DATA_DIR):
 	@mkdir -p $@
 
-# Make scripts executable
-fetch.sh cluster.sql:
-	chmod +x fetch.sh
+# Initialize database (one-time setup)
+init: $(DATA_DIR)
+	@chmod +x init.sh
+	@./init.sh $(DB_PATH)
 
-# Fetch STAC data
-$(DATA_FILE): fetch.sh
-	@echo "📡 Fetching STAC data from $(HOST) for last $(DAYS) days..."
-	@./fetch.sh $(DAYS) $(HOST) "$(BBOX)" > $@
+# Sync new data from API (incremental)
+sync: $(DATA_DIR)
+	@chmod +x sync.sh
+	@echo "Syncing STAC data from $(HOST) for last $(DAYS) days..."
+	@./sync.sh $(DAYS) $(HOST)
 
-# Process hotspots with DuckDB
-$(OUTPUT_FILE): $(DATA_FILE) cluster.sql
-	@echo "🔍 Processing hotspots with DuckDB..."
-	@sed "s|DATA_FILE_PLACEHOLDER|$<|g" cluster.sql | duckdb -json | jq '.[0].geojson' > $@
-	@echo "✅ Generated hotspots.geojson with top $(TOP_N) hotspots"
+# Analyze database and generate hotspots
+analyze: $(DATA_DIR)
+	@chmod +x analyze.sh
+ifdef ANALYZE_DAYS
+	@./analyze.sh $(ANALYZE_DAYS) $(OUTPUT_FILE)
+else
+	@./analyze.sh "" $(OUTPUT_FILE)
+endif
+
+# Show database status
+status:
+	@chmod +x status.sh
+	@./status.sh
+
+# Add location names via reverse geocoding
+geocode: $(OUTPUT_FILE)
+	@echo "Geocoding hotspot locations..."
+	@chmod +x geocode.sh
+	@./geocode.sh $(OUTPUT_FILE) $(OUTPUT_FILE)
+	@echo "Added location names to hotspots"
+
+# Backfill historical data (fetch more days)
+backfill:
+	@echo "Backfilling historical data ($(DAYS) days)..."
+	@chmod +x sync.sh
+	@./sync.sh $(DAYS) $(HOST)
+
+# Clean generated files (keeps database)
+clean:
+	@echo "Cleaning output files..."
+	@rm -f $(OUTPUT_FILE)
+
+# Reset everything (removes database)
+reset:
+	@echo "Resetting database..."
+	@rm -rf $(DATA_DIR)
+	@mkdir -p $(DATA_DIR)
 
 # Install dependencies
 install:
-	@echo "📦 Installing dependencies..."
-	uv add duckdb
-	@echo "🔧 Installing DuckDB CLI..."
-	which duckdb || (echo "Please install DuckDB: https://duckdb.org/docs/installation/" && exit 1)
-
-# Test the pipeline
-test: $(DATA_FILE)
-	@echo "🧪 Testing pipeline..."
-	@echo "Data file size: $$(wc -c < $<) bytes"
-	@echo "Number of features: $$(cat $< | jq '.features | length')"
-	@echo "Sample feature:"
-	@cat $< | jq '.features[0] | {id: .properties.id, datetime: .properties.datetime, collection: .properties.constellation}'
-
-# Clean up generated files
-clean:
-	@echo "🧹 Cleaning up..."
-	rm -rf $(DATA_DIR)/*
-	@mkdir -p $(DATA_DIR)
+	@echo "Checking dependencies..."
+	@which duckdb || (echo "Please install DuckDB: https://duckdb.org/docs/installation/" && exit 1)
+	@which jq || (echo "Please install jq: brew install jq" && exit 1)
+	@which curl || (echo "Please install curl" && exit 1)
+	@echo "All dependencies installed."
 
 # Show help
 help:
-	@echo "STAC Hotspots Analysis Pipeline"
+	@echo "STAC-Trace: Satellite Imagery Hotspot Analysis"
 	@echo ""
-	@echo "Targets:"
-	@echo "  all       - Run full pipeline (default)"
-	@echo "  install   - Install dependencies"
-	@echo "  test      - Test pipeline with sample data"
-	@echo "  clean     - Remove generated files"
+	@echo "Quick Start:"
+	@echo "  make init          # One-time database setup"
+	@echo "  make sync          # Fetch new data from API"
+	@echo "  make analyze       # Generate hotspots from database"
+	@echo "  make               # Sync + analyze (default)"
 	@echo ""
-	@echo "Variables:"
-	@echo "  HOST      - STAC host (default: oneatlas)"
-	@echo "  DAYS      - Days to look back (default: 7)"
-	@echo "  BBOX      - Bounding box (optional)"
-	@echo "  TOP_N     - Number of top hotspots (default: 10)"
+	@echo "Other Commands:"
+	@echo "  make status        # Show database statistics"
+	@echo "  make geocode       # Add location names to hotspots"
+	@echo "  make backfill DAYS=365  # Fetch historical data"
+	@echo "  make clean         # Remove output files"
+	@echo "  make reset         # Delete database and start fresh"
+	@echo ""
+	@echo "Configuration:"
+	@echo "  HOST=oneatlas      # STAC host (default: oneatlas)"
+	@echo "  DAYS=7             # Days to sync (default: 7)"
+	@echo "  ANALYZE_DAYS=30    # Days to analyze (default: all)"
+	@echo "  GEOCODE=1          # Enable geocoding"
 	@echo ""
 	@echo "Examples:"
-	@echo "  make HOST=capella DAYS=30"
-	@echo "  make BBOX='-122.5,37.5,-122.0,38.0'"
-	@echo "  make test"
-
-# Show current configuration
-config:
-	@echo "Current configuration:"
-	@echo "  HOST: $(HOST)"
-	@echo "  DAYS: $(DAYS)"
-	@echo "  BBOX: $(BBOX)"
-	@echo "  TOP_N: $(TOP_N)"
+	@echo "  make DAYS=30                    # Sync last 30 days"
+	@echo "  make sync DAYS=365              # Backfill a year"
+	@echo "  make analyze ANALYZE_DAYS=7     # Analyze last week only"
+	@echo "  make GEOCODE=1                  # Sync + analyze + geocode"
 	@echo ""
-	@echo "Note: Time-slicing automatically enabled for DAYS > 1"
-	@echo "This bypasses the 500-item API limit for comprehensive analysis"
+	@echo "Workflow:"
+	@echo "  1. make init       # First time only"
+	@echo "  2. make sync       # Run daily via cron"
+	@echo "  3. make analyze    # Generate hotspots anytime (instant)"
