@@ -1,14 +1,41 @@
 # stac-trace
 
-Minimal tool for exploring [STAC catalogues](https://stacspec.org/en). Ultimate purpose: surfacing interesting locations that other people have tasked high-resolution satellite imagery of in recent months. 'What's being watched?' Start with a shell script-based command-line tool, then we'll expand into a Mapbox map later on.
+Minimal tool for exploring [STAC catalogues](https://stacspec.org/en). Ultimate purpose: surfacing interesting locations that other people have tasked high-resolution satellite imagery of in recent months. 'What's being watched?'
 
 ## System Architecture
 
-- Shell scripts (`fetch.sh`, `stac-trace`) for data fetching and orchestration
-- DuckDB SQL (`cluster.sql`) for spatial processing and hotspot detection
-- Makefile for pipeline orchestration
+- **Shell scripts** (`scripts/`) for data fetching, analysis, and utilities
+- **DuckDB SQL** (`queries/analyze.sql`) for spatial processing and hotspot detection
+- **Makefile** for pipeline orchestration
+- **Persistent DuckDB database** at `data/stac.duckdb` for incremental data collection
 - Uses UP42 [API docs](https://developer.up42.com/reference/overview) for STAC queries
 - UP42 credentials in `.env` (OAuth authentication, not project API keys)
+
+## Directory Structure
+
+```
+scripts/
+  init.sh      # Database initialization
+  sync.sh      # Incremental data fetch from API
+  analyze.sh   # Run hotspot detection
+  geocode.sh   # Reverse geocode hotspot locations
+  status.sh    # Show database statistics
+queries/
+  analyze.sql  # DuckDB SQL for hotspot detection
+data/
+  stac.duckdb       # Persistent database
+  hotspots.geojson  # Analysis output
+```
+
+## Workflow
+
+```bash
+make init              # One-time database setup
+make sync DAYS=30      # Fetch last 30 days of data
+make analyze           # Generate hotspots (instant, runs on DB)
+make status            # Show database statistics
+make GEOCODE=1         # Sync + analyze + geocode in one step
+```
 
 ## Key Technical Details
 
@@ -19,44 +46,43 @@ Minimal tool for exploring [STAC catalogues](https://stacspec.org/en). Ultimate 
 - Credentials from environment variables: `UP42_USERNAME` and `UP42_PASSWORD`
 
 ### API Limitations & Solutions
-- **500-item limit per request**: Implemented automatic time-slicing in `fetch.sh`
-- **Rate limiting**: Exponential backoff for geocoding requests
-- **Collections endpoint**: Use `/collections` not `/catalog/collections`
+- **500-item limit per request**: Pagination with `next` token
+- **Global coverage**: Splits world into 5 regions (Americas, Europe/Africa, Middle East/Asia, East Asia/Pacific, Antarctica) to ensure complete coverage
+- **Rate limiting**: 0.3s delay between paginated requests
 
 ### Satellite Filtering
-- Filters to high-resolution (≤0.75m) satellites to exclude wide-area coverage (SPOT, Sentinel, etc.)
-- Taskable collections filtered in DuckDB SQL queries
-- This focuses on actual surveillance activity, not routine Earth observation
+- Filters to high-resolution (≤0.75m GSD) satellites
+- Excludes SPOT constellation (wide-area coverage)
+- Filtering applied both during fetch (jq) and in SQL queries
+- Focuses on actual tasking activity, not routine Earth observation
 
 ### Hotspot Detection Algorithm
-1. Intersection-based clustering using spatial relationships
-2. Groups images that intersect/overlap with each other
-3. Uses connected components to find clusters of mutually intersecting images
-4. Minimum threshold of 5 items per hotspot
-5. Returns top locations with geocoded names
+1. **Grid-based clustering**: Uses 0.1 degree (~11km) grid cells
+2. **Adjacent cell merging**: Groups 2x2 grid cells to avoid boundary splitting
+3. **Minimum threshold**: 5 images per hotspot
+4. **Convex hull**: Creates polygon encompassing all images in cluster
+5. **Outputs**: GeoJSON FeatureCollection with centroid, image count, date range
+
+### Database Schema
+
+```sql
+-- Raw STAC items (append-only, deduplicated by id)
+items (id TEXT PRIMARY KEY, geometry JSON, properties JSON, bbox JSON, host TEXT, fetched_at TIMESTAMP)
+
+-- Sync tracking for incremental fetches
+sync_log (id INTEGER, host TEXT, region TEXT, start_date TIMESTAMP, end_date TIMESTAMP, items_added INTEGER, synced_at TIMESTAMP)
+```
 
 ### Location Intelligence
 - Reverse geocoding via OpenStreetMap Nominatim (no API key needed)
-- Caches results in memory to avoid rate limits
+- Respects rate limits: 1 request per second
+- Simplifies names to first 2-3 address components
 - Falls back to coordinates if geocoding fails
-
-### Google Earth Integration
-- Generates direct URLs for each hotspot
-- Format: `https://earth.google.com/web/@{lat},{lon},0a,50000d,35y,0h,0t,0r`
-- 50km altitude for good regional context
-
-## Important Implementation Notes
-
-- **Date handling**: Handle both "Z" and "+00:00" timezone formats
-- **Collection names**: Check both `constellation` and `collection` properties
-- **Geocoding**: Use `geometryCentroid` from provider properties, fallback to bbox center
-- **Error handling**: Always check response status codes and handle gracefully
-- **Terminal output**: Simple shell output with emojis for clarity
 
 ## Common Issues & Solutions
 
 1. **Authentication errors (404)**: Make sure to use OAuth, not project API keys
-2. **Missing hotspots**: Check if API limit was hit (500 items) - deep search handles this
-3. **Non-deterministic results**: Fixed by sorting locations before clustering
-4. **Boundary splitting**: Fixed with adjacent cell merging in clustering algorithm
-5. **Rate limiting on geocoding**: Implemented caching and exponential backoff
+2. **Database not found**: Run `make init` first
+3. **No items**: Check API credentials, run `make sync`
+4. **Boundary splitting**: Fixed by 2x2 grid cell merging in clustering algorithm
+5. **Rate limiting on geocoding**: 1.1s delay between requests per Nominatim policy

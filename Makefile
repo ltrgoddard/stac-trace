@@ -26,41 +26,41 @@ $(DATA_DIR):
 
 # Initialize database (one-time setup)
 init: $(DATA_DIR)
-	@chmod +x init.sh
-	@./init.sh $(DB_PATH)
+	@chmod +x scripts/init.sh
+	@./scripts/init.sh $(DB_PATH)
 
 # Sync new data from API (incremental)
 sync: $(DATA_DIR)
-	@chmod +x sync.sh
+	@chmod +x scripts/sync.sh
 	@echo "Syncing STAC data from $(HOST) for last $(DAYS) days..."
-	@./sync.sh $(DAYS) $(HOST)
+	@./scripts/sync.sh $(DAYS) $(HOST)
 
 # Analyze database and generate hotspots
 analyze: $(DATA_DIR)
-	@chmod +x analyze.sh
+	@chmod +x scripts/analyze.sh
 ifdef ANALYZE_DAYS
-	@./analyze.sh $(ANALYZE_DAYS) $(OUTPUT_FILE)
+	@./scripts/analyze.sh $(ANALYZE_DAYS) $(OUTPUT_FILE)
 else
-	@./analyze.sh "" $(OUTPUT_FILE)
+	@./scripts/analyze.sh "" $(OUTPUT_FILE)
 endif
 
 # Show database status
 status:
-	@chmod +x status.sh
-	@./status.sh
+	@chmod +x scripts/status.sh
+	@./scripts/status.sh
 
 # Add location names via reverse geocoding
 geocode: $(OUTPUT_FILE)
 	@echo "Geocoding hotspot locations..."
-	@chmod +x geocode.sh
-	@./geocode.sh $(OUTPUT_FILE) $(OUTPUT_FILE)
+	@chmod +x scripts/geocode.sh
+	@./scripts/geocode.sh $(OUTPUT_FILE) $(OUTPUT_FILE)
 	@echo "Added location names to hotspots"
 
 # Backfill historical data (fetch more days)
 backfill:
 	@echo "Backfilling historical data ($(DAYS) days)..."
-	@chmod +x sync.sh
-	@./sync.sh $(DAYS) $(HOST)
+	@chmod +x scripts/sync.sh
+	@./scripts/sync.sh $(DAYS) $(HOST)
 
 # Clean generated files (keeps database)
 clean:

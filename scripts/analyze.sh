@@ -36,7 +36,8 @@ fi
 echo "Running hotspot detection..."
 
 # Replace placeholder and execute
-sed "s|DATE_FILTER_PLACEHOLDER|$DATE_FILTER|g" analyze.sql \
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+sed "s|DATE_FILTER_PLACEHOLDER|$DATE_FILTER|g" "$SCRIPT_DIR/../queries/analyze.sql" \
     | duckdb "$DB_PATH" -json \
     | jq '.[0].geojson' > "$OUTPUT"
 
