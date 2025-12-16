@@ -3,8 +3,8 @@
 <head>
     <title>STAC TRACE - SURVEILLANCE HOTSPOTS</title>
     <meta charset="utf-8">
-    <script src='https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.js'></script>
-    <link href='https://api.mapbox.com/mapbox-gl-js/v3.0.1/mapbox-gl.css' rel='stylesheet' />
+    <script src='https://unpkg.com/maplibre-gl@5.0.0/dist/maplibre-gl.js'></script>
+    <link href='https://unpkg.com/maplibre-gl@5.0.0/dist/maplibre-gl.css' rel='stylesheet' />
     <style>
         body {
             margin: 0;
@@ -94,65 +94,55 @@
     <div id="map"></div>
     <div class="info-panel">
         <h3>STAC TRACE</h3>
+        <p><strong>DATES:</strong> <span id="date-range">-</span></p>
         <p><strong>IMAGES:</strong> <span id="total-images">0</span></p>
+        <p><strong>HOTSPOTS:</strong> <span id="total-hotspots">0</span></p>
         <div id="image-info"><!-- Satellite info appears here on hover --></div>
-    </div>
     </div>
 
 
     <script>
-        // Set Mapbox access token
-        mapboxgl.accessToken = 'pk.eyJ1IjoiZGF0YS1kZXNrIiwiYSI6ImNsYmNlcjl4bjBjd3UzcG55dHluaHYzbmQifQ.2wVVsUzF2BHBJ9ywCxCqWw';
-
         // Wait for DOM to be ready
         document.addEventListener('DOMContentLoaded', function() {
-            // Initialize map with Mapbox GL JS and globe projection
-            const map = new mapboxgl.Map({
+            const map = new maplibregl.Map({
                 container: 'map',
-                style: 'mapbox://styles/mapbox/satellite-v9', // Satellite style for better globe visibility
-                center: [0, 20], // Center on equator
-                zoom: 1.5,
-                maxZoom: 18,
-                projection: 'globe', // Globe projection
-                // Disable all map controls for clean interface
                 attributionControl: false,
-                interactive: true, // Keep interactivity for popups
-                pitchWithRotate: false,
-                dragRotate: false,
-                touchZoomRotate: false
-            });
-
-            // Remove any default controls that might be added
-            map.on('load', () => {
-                // Remove navigation control if it exists
-                const navControl = map._controls.find(control => control instanceof mapboxgl.NavigationControl);
-                if (navControl) {
-                    map.removeControl(navControl);
-                }
-            });
-
-            console.log('> STAC TRACE - GLOBE PROJECTION INITIALIZED');
-
-            // Enhanced error handling
-            map.on('error', (e) => {
-                console.log('> MAP ERROR:', e.error.message);
-                if (e.error.message.includes('projection') || e.error.message.includes('WebGL') || e.error.message.includes('globe')) {
-                    console.log('> FORCING GLOBE PROJECTION...');
-                    setTimeout(() => {
-                        try {
-                            map.setProjection('globe');
-                            console.log('> GLOBE PROJECTION SUCCESS');
-                        } catch (retryError) {
-                            console.log('> GLOBE PROJECTION FAILED:', retryError.message);
-                            console.log('> FALLBACK TO MERCATOR');
-                            try {
-                                map.setProjection('mercator');
-                            } catch (fallbackError) {
-                                console.log('> FALLBACK FAILED');
+                style: {
+                    version: 8,
+                    projection: {
+                        type: 'globe'
+                    },
+                    sources: {
+                        'satellite': {
+                            type: 'raster',
+                            tiles: [
+                                'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+                            ],
+                            tileSize: 256,
+                            attribution: '© Esri'
+                        }
+                    },
+                    layers: [
+                        {
+                            id: 'background',
+                            type: 'background',
+                            paint: {
+                                'background-color': '#000000'
+                            }
+                        },
+                        {
+                            id: 'satellite-layer',
+                            type: 'raster',
+                            source: 'satellite',
+                            paint: {
+                                'raster-saturation': -1
                             }
                         }
-                    }, 1000);
-                }
+                    ]
+                },
+                center: [0, 20],
+                zoom: 1.5,
+                maxZoom: 18
             });
 
         let hotspotsData = null;
@@ -163,40 +153,51 @@
         map.on('load', () => {
             console.log('> LOADING SATELLITE DATA...');
 
-            // Load raw STAC data
-            fetch('data/stac_data.json')
-                .then(response => response.json())
-                .then(data => {
-                    // Filter for high-resolution satellites only (<=75cm and not SPOT)
-                    const filteredData = {
-                        type: "FeatureCollection",
-                        features: data.features.filter(feature => {
-                            const props = feature.properties;
-                            const constellation = props.constellation?.toLowerCase();
-                            const resolution = props.resolution;
-                            return constellation !== 'spot' && resolution <= 0.75;
-                        })
-                    };
+            // Load both raw data and hotspots in parallel
+            Promise.all([
+                fetch('data/stac_data.json').then(r => r.json()).catch(() => ({ features: [] })),
+                fetch('data/hotspots.geojson').then(r => r.json()).catch(() => ({ features: [] }))
+            ]).then(([rawData, hotspotsGeoJson]) => {
+                // Filter for high-resolution satellites only (<=75cm and not SPOT)
+                const filteredData = {
+                    type: "FeatureCollection",
+                    features: (rawData.features || []).filter(feature => {
+                        const props = feature.properties;
+                        const constellation = props.constellation?.toLowerCase();
+                        const resolution = props.resolution;
+                        return constellation !== 'spot' && resolution <= 0.75;
+                    })
+                };
 
-                    hotspotsData = filteredData;
-                    totalImages = filteredData.features.length;
+                hotspotsData = filteredData;
+                totalImages = filteredData.features.length;
+                totalHotspots = (hotspotsGeoJson.features || []).length;
 
-                    // Update info panel
-                    document.getElementById('total-images').textContent = totalImages;
+                // Calculate date range
+                const dates = filteredData.features
+                    .map(f => new Date(f.properties.datetime))
+                    .filter(d => !isNaN(d));
+                const minDate = new Date(Math.min(...dates));
+                const maxDate = new Date(Math.max(...dates));
+                const formatDate = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 
-                    console.log(`> LOADED ${totalImages} RAW SATELLITE IMAGES`);
-                    console.log('> SHOWING INDIVIDUAL IMAGES WITHOUT CLUSTERING');
+                // Update info panel
+                document.getElementById('date-range').textContent = `${formatDate(minDate)} – ${formatDate(maxDate)}`;
+                document.getElementById('total-images').textContent = totalImages;
+                document.getElementById('total-hotspots').textContent = totalHotspots;
 
-                    // Add data to map
-                    addDataToMap(filteredData);
-                })
-                .catch(error => {
-                    console.error('> ERROR LOADING DATA:', error);
-                    document.querySelector('.info-panel').innerHTML = '<h3>ERROR</h3><p>FAILED TO LOAD HOTSPOTS</p>';
-                });
+                console.log(`> LOADED ${totalImages} RAW SATELLITE IMAGES`);
+                console.log(`> LOADED ${totalHotspots} HOTSPOT CLUSTERS`);
+
+                // Add data to map
+                addDataToMap(filteredData, hotspotsGeoJson);
+            }).catch(error => {
+                console.error('> ERROR LOADING DATA:', error);
+                document.querySelector('.info-panel').innerHTML = '<h3>ERROR</h3><p>FAILED TO LOAD DATA</p>';
+            });
         });
 
-        function addDataToMap(data) {
+        function addDataToMap(data, hotspots) {
             // Add satellite image footprints
             map.addSource('satellite-images', {
                 type: 'geojson',
@@ -227,7 +228,74 @@
                 }
             });
 
-            // Update info panel on hover
+            // Add hotspot clusters if available
+            if (hotspots && hotspots.features && hotspots.features.length > 0) {
+                map.addSource('hotspots', {
+                    type: 'geojson',
+                    data: hotspots
+                });
+
+                // Add hotspot fill layer (red highlight)
+                map.addLayer({
+                    id: 'hotspot-fill',
+                    type: 'fill',
+                    source: 'hotspots',
+                    paint: {
+                        'fill-color': '#ff0000',
+                        'fill-opacity': 0.25
+                    }
+                });
+
+                // Add hotspot outline
+                map.addLayer({
+                    id: 'hotspot-outline',
+                    type: 'line',
+                    source: 'hotspots',
+                    paint: {
+                        'line-color': '#ff0000',
+                        'line-width': 2,
+                        'line-opacity': 0.9
+                    }
+                });
+
+                // Hotspot hover interaction
+                map.on('mouseenter', 'hotspot-fill', (e) => {
+                    const feature = e.features[0];
+                    const props = feature.properties;
+                    const imageCount = props.hotspot_image_count || 0;
+                    const latest = props.latest_datetime ? new Date(props.latest_datetime).toLocaleDateString() : 'Unknown';
+                    const collection = props.primary_collection || 'Mixed';
+                    const location = props.location_name || `${props.hotspot_centroid_lat?.toFixed(3)}, ${props.hotspot_centroid_lon?.toFixed(3)}`;
+
+                    document.getElementById('image-info').innerHTML = `
+                        <strong style="color: #ff0000">HOTSPOT</strong><br>
+                        <strong>${location}</strong><br>
+                        ${imageCount} images<br>
+                        Latest: ${latest}<br>
+                        Primary: ${collection}
+                    `;
+                    map.getCanvas().style.cursor = 'pointer';
+                });
+
+                map.on('mouseleave', 'hotspot-fill', () => {
+                    document.getElementById('image-info').innerHTML = '';
+                    map.getCanvas().style.cursor = '';
+                });
+
+                // Click to open Google Earth
+                map.on('click', 'hotspot-fill', (e) => {
+                    const feature = e.features[0];
+                    const props = feature.properties;
+                    const lat = props.hotspot_centroid_lat;
+                    const lon = props.hotspot_centroid_lon;
+                    if (lat && lon) {
+                        const earthUrl = `https://earth.google.com/web/@${lat},${lon},0a,50000d,35y,0h,0t,0r`;
+                        window.open(earthUrl, '_blank');
+                    }
+                });
+            }
+
+            // Update info panel on hover for raw images
             map.on('mouseenter', 'satellite-footprints', (e) => {
                 const feature = e.features[0];
                 const props = feature.properties;
@@ -251,25 +319,31 @@
                 map.getCanvas().style.cursor = '';
             });
 
-            // Fit bounds to show all data
-            const bounds = new mapboxgl.LngLatBounds();
-            data.features.forEach(feature => {
-                if (feature.geometry.type === 'Polygon') {
-                    // Handle single merged Polygon
+            // Fit bounds to show all data (prioritize hotspots if available)
+            const bounds = new maplibregl.LngLatBounds();
+            const dataToFit = (hotspots && hotspots.features && hotspots.features.length > 0) ? hotspots : data;
+
+            dataToFit.features.forEach(feature => {
+                if (feature.geometry && feature.geometry.type === 'Polygon') {
                     feature.geometry.coordinates[0].forEach(coord => {
                         bounds.extend(coord);
+                    });
+                } else if (feature.geometry && feature.geometry.type === 'MultiPolygon') {
+                    feature.geometry.coordinates.forEach(polygon => {
+                        polygon[0].forEach(coord => {
+                            bounds.extend(coord);
+                        });
                     });
                 }
             });
 
             // Only fit bounds if we have coordinates
             try {
-                // Check if bounds has been extended (has valid coordinates)
                 const boundsArray = bounds.toArray();
                 if (boundsArray && boundsArray.length === 2 &&
                     boundsArray[0].length === 2 && boundsArray[1].length === 2) {
-                    map.fitBounds(bounds, { padding: 20 });
-                    console.log('> MAP BOUNDS FITTED TO IMAGES');
+                    map.fitBounds(bounds, { padding: 50 });
+                    console.log('> MAP BOUNDS FITTED');
                 } else {
                     console.log('> NO VALID BOUNDS, USING DEFAULT VIEW');
                 }
@@ -279,14 +353,7 @@
         }
 
             // Add navigation controls
-            map.addControl(new mapboxgl.NavigationControl());
-
-            // Enable globe rotation controls
-            map.on('load', () => {
-                console.log('🌍 Mapbox Globe Projection Active');
-                console.log('🖱️ Right-click and drag to rotate the globe');
-                console.log('🔍 Scroll to zoom, click satellite images for details');
-            });
+            map.addControl(new maplibregl.NavigationControl());
         });
     </script>
 </body>
